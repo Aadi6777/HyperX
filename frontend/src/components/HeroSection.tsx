@@ -1,14 +1,12 @@
 import React from 'react';
 import {
-  Zap,
+  ArrowUp,
+  ArrowDown,
   Activity,
-  Shield,
   Layers,
-  HardDrive,
   Cpu,
-  ArrowRight,
-  Radio,
-  ServerOff
+  HardDrive,
+  Shield
 } from 'lucide-react';
 
 interface HeroSectionProps {
@@ -16,141 +14,131 @@ interface HeroSectionProps {
   onSelectReceive?: () => void;
 }
 
-export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend }) => {
+export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend, onSelectReceive }) => {
   return (
-    <section className="hyperx-hero-deck" aria-label="HyperX System Overview">
-      <div className="hero-grid-container">
-        {/* Left Column: Mission Briefing & Direct Trigger */}
-        <div className="hero-briefing">
-          <div className="hero-status-pill">
-            <span className="pill-dot-pulse" />
-            <span className="pill-text">HYPERX PROTOCOL v2.0 &bull; LIVE MESH</span>
-            <span className="pill-tag">ZERO-RAM</span>
+    <section className="hyperlink-hero-deck" aria-label="HyperX System Overview">
+      <div className="hyperlink-hero-grid">
+        {/* Left Column: Mission Briefing, Typography & Telemetry */}
+        <div className="hero-left-column">
+          <div className="hero-eyebrow-wrap">
+            <div className="bauhaus-red-line" />
+            <span className="hero-eyebrow-text">P2P ENCRYPTED PROTOCOL // ZERO-RAM STREAMING</span>
           </div>
 
-          <h1 className="hero-master-title">
-            Stream Massive Files.<br />
-            <span className="hero-gradient-text">Zero Server RAM.</span><br />
-            Pure Peer Velocity.
+          <h1 className="hero-headline">
+            STREAM.<br />
+            <span className="headline-blue">DIRECT.</span><br />
+            FAST.
           </h1>
 
           <p className="hero-lead-text">
             Enterprise peer-to-peer file streaming over WebRTC DataChannels. Files stream slice-by-slice directly into browser IndexedDB storage with adaptive backpressure control—eliminating cloud bandwidth costs and out-of-memory browser tab crashes.
           </p>
 
-          <div className="hero-cta-group">
-            <button
-              type="button"
-              className="btn-hyper-primary"
-              onClick={onSelectSend}
-              id="hero-start-stream-btn"
-            >
-              <Zap size={18} />
-              <span>Launch P2P Stream</span>
-              <ArrowRight size={16} />
-            </button>
+          <div className="hero-status-row">
+            <div className="ping-beacon">
+              <span className="beacon-ping" />
+              <span className="beacon-dot" />
+            </div>
+            <span className="beacon-text">WebRTC Ready // 256-bit AES // Mumbai ap-south-1</span>
+          </div>
 
-            <div className="hero-spec-badges">
-              <div className="spec-badge">
-                <Shield size={14} color="var(--hyper-cyan)" />
-                <span>AES-256-GCM</span>
+          {/* Real-time Memory & Mesh Telemetry HUD */}
+          <div className="hero-telemetry-card">
+            <div className="hud-bench-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Activity size={15} style={{ color: 'var(--bauhaus-blue)' }} />
+                <span className="hud-bench-title">V8 HEAP CONSUMPTION BENCHMARK</span>
               </div>
-              <div className="spec-badge">
-                <ServerOff size={14} color="var(--hyper-emerald)" />
-                <span>Serverless P2P</span>
+              <span className="hud-bench-badge">60% LESS RAM</span>
+            </div>
+
+            <div className="hud-bench-rows">
+              <div className="bench-row traditional">
+                <div className="bench-row-info">
+                  <span className="bench-label">Traditional Cloud Upload (50GB File)</span>
+                  <span className="bench-val text-red">4.8 GB RAM &bull; Tab Crashes (OOM)</span>
+                </div>
+                <div className="bench-bar-track">
+                  <div className="bench-bar-fill bg-bauhaus-red" style={{ width: '92%' }} />
+                </div>
               </div>
-              <div className="spec-badge">
-                <HardDrive size={14} color="var(--hyper-violet)" />
-                <span>IndexedDB Cache</span>
+
+              <div className="bench-row hyperx">
+                <div className="bench-row-info">
+                  <span className="bench-label">HyperX Zero-RAM Streamer (50GB File)</span>
+                  <span className="bench-val text-blue">14.6 MB RAM &bull; Flatline Resilient</span>
+                </div>
+                <div className="bench-bar-track">
+                  <div className="bench-bar-fill bg-bauhaus-blue" style={{ width: '12%' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Micro Metrics Grid */}
+            <div className="hud-micro-grid">
+              <div className="hud-micro-cell">
+                <Layers size={14} style={{ color: 'var(--bauhaus-blue)' }} />
+                <span>Slice: <strong>512 KB</strong></span>
+              </div>
+              <div className="hud-micro-cell">
+                <Cpu size={14} style={{ color: 'var(--bauhaus-yellow)' }} />
+                <span>Limit: <strong>1.0 MB</strong></span>
+              </div>
+              <div className="hud-micro-cell">
+                <HardDrive size={14} style={{ color: 'var(--accent-green)' }} />
+                <span>Store: <strong>IndexedDB</strong></span>
+              </div>
+              <div className="hud-micro-cell">
+                <Shield size={14} style={{ color: 'var(--bauhaus-red)' }} />
+                <span>Seal: <strong>SHA-256</strong></span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Holographic Architecture & Memory Flatline HUD */}
-        <div className="hero-telemetry-hud glass-panel">
-          <div className="hud-header">
-            <div className="hud-title-wrap">
-              <Activity size={16} color="var(--hyper-cyan)" />
-              <span className="hud-title">REAL-TIME MEMORY &amp; MESH TELEMETRY</span>
-            </div>
-            <div className="hud-live-tag">
-              <Radio size={12} color="var(--hyper-emerald)" />
-              <span>LIVE</span>
+        {/* Right Column: Bauhaus Kinetic Sculpture & Huge Split Action Tiles */}
+        <div className="hero-right-column">
+          {/* Interactive Geometry Sculpture */}
+          <div className="sculpture-stage group">
+            <div className="sculpture-inner">
+              <div className="kinetic-shape circle bg-bauhaus-blue" />
+              <div className="kinetic-shape triangle bg-bauhaus-red" />
+              <div className="kinetic-shape square bg-bauhaus-yellow" />
             </div>
           </div>
 
-          {/* Benchmark Comparison: Traditional vs HyperX */}
-          <div className="hud-benchmark-box">
-            <div className="benchmark-row danger-case">
-              <div className="bench-meta">
-                <span className="bench-label">Traditional Cloud Upload (50GB File)</span>
-                <span className="bench-val">4.8 GB RAM &bull; Tab Crashes (OOM)</span>
+          {/* Huge Action Blocks: SEND (Blue) & RECEIVE (Red) */}
+          <div className="hero-action-grid">
+            <button
+              type="button"
+              onClick={onSelectSend}
+              className="action-tile action-tile-send group"
+              id="hero-action-send"
+              aria-label="Send File Drag and Drop"
+            >
+              <div className="action-tile-overlay" />
+              <ArrowUp size={46} className="action-tile-icon" />
+              <div className="action-tile-text">
+                <span className="action-title">SEND</span>
+                <span className="action-sub">Drag &amp; Drop File</span>
               </div>
-              <div className="bench-bar-track">
-                <div className="bench-bar-fill danger-fill" style={{ width: '92%' }} />
-              </div>
-            </div>
+            </button>
 
-            <div className="benchmark-row hyper-case">
-              <div className="bench-meta">
-                <span className="bench-label">HyperX Zero-RAM Streamer (50GB File)</span>
-                <span className="bench-val text-cyan">14.6 MB RAM &bull; Flatline Resilient</span>
+            <button
+              type="button"
+              onClick={onSelectReceive}
+              className="action-tile action-tile-receive group"
+              id="hero-action-receive"
+              aria-label="Receive File Enter Code"
+            >
+              <div className="action-tile-overlay" />
+              <ArrowDown size={46} className="action-tile-icon" />
+              <div className="action-tile-text">
+                <span className="action-title">RECEIVE</span>
+                <span className="action-sub">Enter Transfer Code</span>
               </div>
-              <div className="bench-bar-track">
-                <div className="bench-bar-fill hyper-fill" style={{ width: '12%' }} />
-              </div>
-            </div>
-          </div>
-
-          {/* HUD Metric Grid */}
-          <div className="hud-stats-grid">
-            <div className="hud-stat-cell">
-              <div className="stat-icon-wrap cyan">
-                <Layers size={18} />
-              </div>
-              <div>
-                <div className="stat-label">Dynamic Slices</div>
-                <div className="stat-value">512 KB</div>
-              </div>
-            </div>
-
-            <div className="hud-stat-cell">
-              <div className="stat-icon-wrap indigo">
-                <Cpu size={18} />
-              </div>
-              <div>
-                <div className="stat-label">Backpressure Limit</div>
-                <div className="stat-value">1.0 MB</div>
-              </div>
-            </div>
-
-            <div className="hud-stat-cell">
-              <div className="stat-icon-wrap emerald">
-                <HardDrive size={18} />
-              </div>
-              <div>
-                <div className="stat-label">Storage Target</div>
-                <div className="stat-value">IndexedDB</div>
-              </div>
-            </div>
-
-            <div className="hud-stat-cell">
-              <div className="stat-icon-wrap violet">
-                <Shield size={18} />
-              </div>
-              <div>
-                <div className="stat-label">Integrity Seal</div>
-                <div className="stat-value">SHA-256</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Subtext info */}
-          <div className="hud-footer-ticker">
-            <span>Mesh: Direct WebRTC DataChannels</span>
-            <span>&bull;</span>
-            <span>Database: Supabase (ap-south-1)</span>
+            </button>
           </div>
         </div>
       </div>

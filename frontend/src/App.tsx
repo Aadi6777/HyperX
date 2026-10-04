@@ -134,18 +134,20 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Bauhaus Tri-Color Ribbon */}
+      <div className="bauhaus-ribbon">
+        <div className="ribbon-blue" />
+        <div className="ribbon-red" />
+        <div className="ribbon-yellow" />
+      </div>
+
       {/* Top Navbar */}
       <nav className="navbar" role="navigation" aria-label="Main Navigation">
         <div className="brand-container">
-          {/* HyperX Signature Emblem */}
-          <div className="hyperx-logo-badge">
-            <span className="logo-letter-h">H</span>
-            <span className="logo-letter-x">X</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <span className="brand-text">HYPERX</span>
             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>
-              DISTRIBUTED P2P PIPELINE
+              P2P PIPELINE
             </span>
           </div>
         </div>
@@ -154,7 +156,7 @@ export const App: React.FC = () => {
         <div className="nav-telemetry-badge hidden-mobile">
           <span className="pill-dot-pulse" />
           <span style={{ color: 'var(--text-secondary)' }}>
-            STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--hyper-emerald)' : 'var(--hyper-amber)' }}>{signalingStatus}</strong>
+            STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-yellow)' }}>{signalingStatus}</strong>
           </span>
           <span className="telemetry-separator">|</span>
           <span style={{ color: 'var(--text-muted)' }}>REGION: <strong>ap-south-1</strong></span>
@@ -166,7 +168,7 @@ export const App: React.FC = () => {
           {currentUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
-                <UserCircle size={18} color="var(--hyper-cyan)" />
+                <UserCircle size={18} color="var(--bauhaus-blue)" />
                 <span style={{ fontWeight: 600 }}>{currentUser.fullName}</span>
                 <span className="badge-tag" style={{ fontSize: '0.65rem' }}>{currentUser.role}</span>
               </div>
@@ -205,8 +207,8 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="app-container" style={{ flex: 1 }}>
-        {/* Bespoke Holographic Hero Section */}
-        <HeroSection onSelectSend={scrollToTransfer} />
+        {/* Bauhaus Split Hero with Kinetic Sculpture and Split Action Blocks */}
+        <HeroSection onSelectSend={scrollToTransfer} onSelectReceive={scrollToTransfer} />
 
         {/* Workspace Boundary Management */}
         {workspaces.length > 0 && (
@@ -225,7 +227,7 @@ export const App: React.FC = () => {
           <TransferCenter workspaceId={activeWorkspace?.id} />
         </div>
 
-        {/* Bespoke 4-Pillar Architectural Matrix */}
+        {/* Bespoke 4-Pillar Architectural Matrix with Bauhaus Badges */}
         <ArchitecturePillars />
 
         {/* Real-time Collaboration & Audit Trail */}
@@ -276,28 +278,28 @@ Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
         </section>
       </main>
 
-      {/* Holographic Footer Beam & Brand Footer */}
+      {/* Bauhaus Footer with Tri-Color Ribbon & Brand Footer */}
       <footer style={{ marginTop: 'auto', width: '100%' }}>
-        <div className="hyperx-footer-beam" />
-        <div style={{ background: 'rgba(3, 7, 18, 0.95)', borderTop: '1px solid var(--border-subtle)', padding: '1.5rem 2rem' }}>
+        <div className="bauhaus-ribbon">
+          <div className="ribbon-blue" />
+          <div className="ribbon-red" />
+          <div className="ribbon-yellow" />
+        </div>
+        <div style={{ background: '#0a0a1a', borderTop: '1px solid var(--border-subtle)', padding: '1.75rem 2rem' }}>
           <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div className="hyperx-logo-badge" style={{ width: '28px', height: '28px', fontSize: '0.75rem' }}>
-                <span className="logo-letter-h">H</span>
-                <span className="logo-letter-x">X</span>
-              </div>
-              <span style={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: '1rem', color: '#fff' }}>
+              <span style={{ fontWeight: 900, letterSpacing: '-0.02em', fontSize: '1.2rem', color: '#fff', textTransform: 'uppercase' }}>
                 HYPERX
               </span>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>&bull; Zero-RAM P2P Streaming Engine</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>&bull; E2E Encrypted P2P Transfer &bull; Zero-RAM Browser Streaming</span>
             </div>
 
             <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
               <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em' }}>
-                AES-256-GCM // WEB STREAMS // INDEXEDDB
+                E2E ENCRYPTED P2P TRANSFER
               </div>
-              <div style={{ fontSize: '0.65rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
-                v2.0.0 &bull; Supabase PostgreSQL
+              <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
+                v1.01.000 &bull; Supabase PostgreSQL
               </div>
             </div>
           </div>
