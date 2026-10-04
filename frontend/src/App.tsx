@@ -32,6 +32,7 @@ export const App: React.FC = () => {
 
   const webrtcEngineRef = useRef<WebRtcEngine | null>(null);
   const transferCenterRef = useRef<HTMLDivElement>(null);
+  const transferControlsRef = useRef<{ triggerFileSelect: () => void; promptReceiveCode: () => void } | null>(null);
 
   // Initialize Auth on startup
   useEffect(() => {
@@ -132,6 +133,20 @@ export const App: React.FC = () => {
     transferCenterRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleHeroSend = () => {
+    scrollToTransfer();
+    setTimeout(() => {
+      transferControlsRef.current?.triggerFileSelect();
+    }, 200);
+  };
+
+  const handleHeroReceive = () => {
+    scrollToTransfer();
+    setTimeout(() => {
+      transferControlsRef.current?.promptReceiveCode();
+    }, 200);
+  };
+
   return (
     <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Bauhaus Tri-Color Ribbon */}
@@ -208,7 +223,7 @@ export const App: React.FC = () => {
       {/* Main Content Area */}
       <main className="app-container" style={{ flex: 1 }}>
         {/* Bauhaus Split Hero with Kinetic Sculpture and Split Action Blocks */}
-        <HeroSection onSelectSend={scrollToTransfer} onSelectReceive={scrollToTransfer} />
+        <HeroSection onSelectSend={handleHeroSend} onSelectReceive={handleHeroReceive} />
 
         {/* Workspace Boundary Management */}
         {workspaces.length > 0 && (
@@ -224,7 +239,13 @@ export const App: React.FC = () => {
 
         {/* Zero-RAM Transfer Studio */}
         <div ref={transferCenterRef}>
-          <TransferCenter workspaceId={activeWorkspace?.id} />
+          <TransferCenter
+            workspaceId={activeWorkspace?.id}
+            webrtcEngine={webrtcEngineRef.current}
+            onMountControls={(ctrls) => {
+              transferControlsRef.current = ctrls;
+            }}
+          />
         </div>
 
         {/* Bespoke 4-Pillar Architectural Matrix with Bauhaus Badges */}

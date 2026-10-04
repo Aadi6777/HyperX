@@ -27,10 +27,21 @@ export interface FileAnnouncement {
   isEncrypted: boolean;
 }
 
+export interface IncomingChunkPayload {
+  fileId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  isEncrypted: boolean;
+  iv?: number[];
+  data: ArrayBuffer;
+  senderPeerId: string;
+}
+
 export type WebRtcEventCallback = {
   onPeersUpdated?: (peers: PeerInfo[]) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onFileAnnounced?: (announcement: FileAnnouncement) => void;
+  onChunkReceived?: (payload: IncomingChunkPayload) => void;
   onDataChannelReady?: (peerId: string, channel: RTCDataChannel) => void;
   onConnectionStatus?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
 };
@@ -40,6 +51,14 @@ export class WebRtcEngine {
   private peerConnections = new Map<string, RTCPeerConnection>();
   private dataChannels = new Map<string, RTCDataChannel>();
   private callbacks: WebRtcEventCallback = {};
+  private pendingHeaders = new Map<string, {
+    type: 'CHUNK';
+    fileId: string;
+    chunkIndex: number;
+    totalChunks: number;
+    isEncrypted: boolean;
+    iv?: number[];
+  }>();
 
   public readonly peerId: string;
   public peerName: string;
@@ -113,6 +132,7 @@ export class WebRtcEngine {
     this.peerConnections.forEach(pc => pc.close());
     this.peerConnections.clear();
     this.dataChannels.clear();
+    this.pendingHeaders.clear();
   }
 
   public sendChat(text: string) {
@@ -138,12 +158,31 @@ export class WebRtcEngine {
     });
   }
 
-  public announceFile(announcement: FileAnnouncement) {
+  public announceFile(announcement: Omit<FileAnnouncement, 'senderPeerId' | 'senderName'>) {
     this.sendWs({
       type: 'file-announcement',
       workspaceId: this.currentWorkspaceId,
+      senderPeerId: this.peerId,
+      senderName: this.peerName,
       ...announcement,
     });
+  }
+
+  public broadcastChunk(header: Record<string, unknown>, buffer: ArrayBuffer): boolean {
+    const json = JSON.stringify(header);
+    let sentAny = false;
+    for (const [, channel] of this.dataChannels) {
+      if (channel.readyState === 'open') {
+        try {
+          channel.send(json);
+          channel.send(buffer);
+          sentAny = true;
+        } catch (err) {
+          console.error('Failed to send chunk over data channel:', err);
+        }
+      }
+    }
+    return sentAny;
   }
 
   public getDataChannel(peerId: string): RTCDataChannel | undefined {
@@ -188,6 +227,7 @@ export class WebRtcEngine {
           pc.close();
           this.peerConnections.delete(peerId);
           this.dataChannels.delete(peerId);
+          this.pendingHeaders.delete(peerId);
         }
         break;
       }
@@ -266,6 +306,35 @@ export class WebRtcEngine {
     };
     channel.onclose = () => {
       this.dataChannels.delete(targetPeerId);
+      this.pendingHeaders.delete(targetPeerId);
+    };
+    channel.onerror = (err) => {
+      console.error(`DataChannel error with peer ${targetPeerId}:`, err);
+    };
+    channel.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.type === 'CHUNK') {
+            this.pendingHeaders.set(targetPeerId, parsed);
+          }
+        } catch (e) {
+          console.error('Failed to parse chunk header:', e);
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        const header = this.pendingHeaders.get(targetPeerId);
+        if (header) {
+          this.callbacks.onChunkReceived?.({
+            fileId: header.fileId,
+            chunkIndex: header.chunkIndex,
+            totalChunks: header.totalChunks,
+            isEncrypted: header.isEncrypted,
+            iv: header.iv,
+            data: event.data,
+            senderPeerId: targetPeerId,
+          });
+        }
+      }
     };
   }
 
