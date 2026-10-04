@@ -117,6 +117,14 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         promptReceiveCode: () => setShowReceiveModal(true),
       });
     }
+
+    // Auto-detect invite transfer code from URL query: ?code=HX-XXXXXX
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get('code') || params.get('transfer');
+    if (codeParam) {
+      setReceiveCodeInput(codeParam.toUpperCase().trim());
+      setShowReceiveModal(true);
+    }
   }, [onMountControls]);
 
   // Handle incoming chunks directly from target sender
@@ -926,6 +934,30 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                           {copiedCode === t.transferId ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
                         </button>
                       </div>
+
+                      {t.direction === 'SEND' && t.status === 'PENDING_PEER' && (
+                        <button
+                          type="button"
+                          onClick={() => window.open(`${window.location.origin}/?code=${t.transferId}`, '_blank')}
+                          className="btn-ghost"
+                          style={{
+                            padding: '0.2rem 0.55rem',
+                            fontSize: '0.72rem',
+                            borderColor: 'var(--bauhaus-blue)',
+                            color: '#fff',
+                            background: 'rgba(0, 71, 255, 0.25)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontWeight: 600,
+                          }}
+                          id="open-receiver-tab-btn"
+                          title="Open new tab to receive this transfer immediately"
+                        >
+                          Open Receiver Tab ↗
+                        </button>
+                      )}
 
                       <span
                         className="badge-tag"
