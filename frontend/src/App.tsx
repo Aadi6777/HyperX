@@ -18,7 +18,7 @@ import {
   PeerInfo,
   ChatMessage
 } from './services/webrtcEngine';
-import { UserCircle, LogIn, LogOut, Terminal } from 'lucide-react';
+import { UserCircle, LogIn, LogOut, Terminal, Link } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -31,6 +31,7 @@ export const App: React.FC = () => {
   const [signalingStatus, setSignalingStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'CONNECTING'>('DISCONNECTED');
 
   const webrtcEngineRef = useRef<WebRtcEngine | null>(null);
+  const transferCenterRef = useRef<HTMLDivElement>(null);
 
   // Initialize Auth on startup
   useEffect(() => {
@@ -53,10 +54,10 @@ export const App: React.FC = () => {
       // Fallback workspace for offline/standalone mode
       const fallback: Workspace = {
         id: 'ws_local_demo',
-        name: 'HyperX Demo Cluster',
-        slug: 'demo-cluster',
+        name: 'HyperX Core Mesh',
+        slug: 'core-mesh',
         ownerId: 'peer_local',
-        ownerName: 'HyperX Demo',
+        ownerName: 'HyperX Peer',
         currentUserRole: 'OWNER',
         memberCount: 2,
         createdAt: new Date().toISOString(),
@@ -127,25 +128,52 @@ export const App: React.FC = () => {
     }
   };
 
+  const scrollToTransferCenter = () => {
+    transferCenterRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div>
+    <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top Navbar */}
       <nav className="navbar" role="navigation" aria-label="Main Navigation">
         <div className="brand-container">
-          <div className="brand-logo" aria-hidden="true">
-            ⚡
+          {/* Bauhaus Yellow Square Icon */}
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              background: 'var(--bauhaus-yellow)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#000',
+              fontWeight: 900,
+              borderRadius: '2px',
+            }}
+          >
+            <Link size={18} strokeWidth={3} />
           </div>
-          <span className="brand-text">HyperX</span>
-          <span className="badge-tag">Phases 1–10 Complete &bull; v2.0.0</span>
+          <span className="brand-text" style={{ letterSpacing: '0.05em' }}>HYPERX</span>
+          <span className="badge-tag" style={{ border: '1px solid rgba(255,255,255,0.15)', fontSize: '0.7rem' }}>
+            P2P PROTOCOL
+          </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Status Indicator */}
+          <div className="badge-tag" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem' }}>
+            <div className="pulse-dot" style={{ width: '8px', height: '8px' }} />
+            <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+              {signalingStatus === 'CONNECTED' ? 'ONLINE // ap-south-1' : signalingStatus}
+            </span>
+          </div>
+
           {currentUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
-                <UserCircle size={18} color="var(--cyan-glow)" />
-                <span>{currentUser.fullName}</span>
-                <span className="badge-tag" style={{ fontSize: '0.7rem' }}>{currentUser.role}</span>
+                <UserCircle size={18} color="var(--bauhaus-yellow)" />
+                <span style={{ fontWeight: 600 }}>{currentUser.fullName}</span>
+                <span className="badge-tag" style={{ fontSize: '0.65rem' }}>{currentUser.role}</span>
               </div>
               <button className="btn-ghost" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={handleLogout}>
                 <LogOut size={14} />
@@ -153,8 +181,27 @@ export const App: React.FC = () => {
               </button>
             </div>
           ) : (
-            <button className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }} onClick={() => setShowAuthModal(true)}>
-              <LogIn size={15} />
+            <button
+              type="button"
+              style={{
+                background: 'var(--bauhaus-yellow)',
+                color: '#000',
+                fontWeight: 800,
+                fontSize: '0.85rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                padding: '0.5rem 1.25rem',
+                border: 'none',
+                cursor: 'pointer',
+                borderRadius: '2px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s ease',
+              }}
+              onClick={() => setShowAuthModal(true)}
+            >
+              <LogIn size={15} strokeWidth={2.5} />
               <span>Peer Sign-In</span>
             </button>
           )}
@@ -177,8 +224,12 @@ export const App: React.FC = () => {
       </nav>
 
       {/* Main Content Area */}
-      <main className="app-container">
-        <HeroSection />
+      <main className="app-container" style={{ flex: 1 }}>
+        {/* Bauhaus Split Hero with Geometric Animation and Action Blocks */}
+        <HeroSection
+          onSelectSend={scrollToTransferCenter}
+          onSelectReceive={scrollToTransferCenter}
+        />
 
         {/* Workspace Boundary Switcher (Phase 3) */}
         {workspaces.length > 0 && (
@@ -193,7 +244,12 @@ export const App: React.FC = () => {
         )}
 
         {/* Phase 5, 6, 7, 8: Zero-RAM Chunk Engine, Local IndexedDB Cache, Resumable Bitmask, AES-256-GCM */}
-        <TransferCenter workspaceId={activeWorkspace?.id} />
+        <div ref={transferCenterRef}>
+          <TransferCenter workspaceId={activeWorkspace?.id} />
+        </div>
+
+        {/* Bauhaus 3-Pillar Architectural Foundations */}
+        <ArchitecturePillars />
 
         {/* Phase 9: Real-time Peer Collaboration & Phase 3 Audit Logs */}
         <CollaborationPanel
@@ -207,53 +263,69 @@ export const App: React.FC = () => {
         {/* Phase 1: Real-time Diagnostics & Capability Probes */}
         <DiagnosticCard />
 
-        {/* Architecture Pillars */}
-        <ArchitecturePillars />
-
-        {/* Full Phases Verification & Deployment Guide */}
+        {/* Verification Guide */}
         <section className="glass-panel card-content" style={{ marginTop: '2.5rem' }}>
           <div className="card-header">
-            <div className="icon-box cyan">
+            <div className="icon-box" style={{ background: 'var(--bauhaus-blue)', color: '#fff' }}>
               <Terminal size={22} />
             </div>
-            <span className="badge-tag">Phase 10 &bull; Production Ready</span>
+            <span className="badge-tag">Production Stack // Supabase</span>
           </div>
 
-          <h3 className="card-title">All 10 Phases Operational Architecture</h3>
+          <h3 className="card-title">Production Infrastructure Architecture</h3>
           <p className="card-desc">
-            The full HyperX enterprise stack is wired: Spring Boot 3.3 backend with PostgreSQL Flyway migrations, stateless JWT security, STUN/TURN WebRTC signaling, zero-RAM dynamic chunking with IndexedDB caching, AES-256-GCM encryption, resumable transfer bitmasks, and real-time peer collaboration.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
           </p>
 
           <pre style={{
-            background: 'rgba(0, 0, 0, 0.4)',
+            background: 'rgba(0, 0, 0, 0.5)',
             padding: '1rem 1.25rem',
             borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border-subtle)',
             overflowX: 'auto',
             fontSize: '0.85rem',
-            color: '#38bdf8'
+            color: '#60a5fa',
+            fontFamily: 'var(--font-mono)'
           }}>
-{`# 1. Run Complete Stack with Docker Compose (PostgreSQL + HyperX Backend)
-docker compose up --build -d
+{`# 1. Connect HyperX Backend to Supabase
+./run-supabase.sh
 
-# 2. Run React Frontend Locally
-cd frontend && npm run dev
+# 2. Expose Local Backend via Secure Tunnel for Vercel
+cloudflared tunnel --url http://localhost:8080
 
-# 3. Execute Full Backend Test Suite
-cd backend && ./mvnw test
-
-# 4. Deploy Frontend to Vercel
-vercel --prod`}
+# 3. Deploy Frontend on Vercel
+Set VITE_API_BASE_URL in Vercel Settings -> Redeploy`}
           </pre>
         </section>
-
-        {/* Footer */}
-        <footer className="footer">
-          <p>
-            HyperX &copy; {new Date().getFullYear()} &bull; Enterprise Peer-to-Peer Large File Streaming Platform &bull; Built with Spring Boot 3.3, WebRTC &amp; React.
-          </p>
-        </footer>
       </main>
+
+      {/* Tri-Color Ribbon & Minimalist Bauhaus Footer */}
+      <footer style={{ marginTop: 'auto', width: '100%' }}>
+        <div className="tri-color-ribbon">
+          <div className="ribbon-blue" />
+          <div className="ribbon-red" />
+          <div className="ribbon-yellow" />
+        </div>
+        <div style={{ background: 'rgba(5, 5, 17, 0.95)', borderTop: '1px solid var(--border-subtle)', padding: '1.5rem 2rem' }}>
+          <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', fontSize: '1.1rem', color: '#fff' }}>
+                HYPERX
+              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>&bull; Zero-RAM P2P Streaming Engine</span>
+            </div>
+
+            <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.15em' }}>
+                E2E ENCRYPTED P2P TRANSFER // 256-BIT AES
+              </div>
+              <div style={{ fontSize: '0.65rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
+                v2.0.0 &bull; Supabase PostgreSQL
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Auth Modal (Phase 2) */}
       <AuthModal

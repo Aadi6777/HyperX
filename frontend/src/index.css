@@ -1,35 +1,33 @@
 :root {
-  --bg-primary: #07090e;
-  --bg-secondary: #0d121d;
-  --bg-card: rgba(18, 24, 38, 0.7);
-  --bg-card-hover: rgba(26, 34, 52, 0.85);
+  --bg-primary: #050511;
+  --bg-secondary: #0a0a1a;
+  --bg-card: rgba(13, 14, 28, 0.75);
+  --bg-card-hover: rgba(20, 22, 42, 0.9);
   
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(0, 242, 254, 0.35);
-  --border-glow: rgba(0, 242, 254, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-active: #0047ff;
+  --border-glow: rgba(0, 71, 255, 0.25);
   
-  --text-primary: #f8fafc;
+  --text-primary: #ffffff;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   
+  --bauhaus-blue: #0047ff;
+  --bauhaus-red: #ff2e00;
+  --bauhaus-yellow: #ffd700;
   --accent-cyan: #00f2fe;
   --cyan-glow: #00f2fe;
-  --accent-blue: #4facfe;
-  --accent-purple: #8b5cf6;
+  --accent-lime: #e5fe40;
   --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
   
-  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  --shadow-glow: 0 0 25px rgba(0, 242, 254, 0.15);
-  --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-full: 9999px;
+  --shadow-card: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
   
   --transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -49,16 +47,17 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   background-image: 
-    radial-gradient(circle at 15% 15%, rgba(79, 172, 254, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 50% 80%, rgba(0, 242, 254, 0.05) 0%, transparent 50%);
+    radial-gradient(#333 1px, transparent 1px),
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px, 128px 128px, 128px 128px;
   background-attachment: fixed;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
-  letter-spacing: -0.025em;
-  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-weight: 800;
 }
 
 code, pre {
@@ -458,6 +457,310 @@ code, pre {
   box-shadow: 0 0 25px rgba(0, 242, 254, 0.25);
 }
 
+/* Bauhaus Hero Layout */
+.bauhaus-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 520px;
+}
+
+@media (min-width: 992px) {
+  .bauhaus-hero-grid {
+    grid-template-columns: 7fr 5fr;
+  }
+}
+
+.hero-left-pane {
+  padding: 3rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+
+.bauhaus-title {
+  font-size: 3.5rem;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: #ffffff;
+  margin: 0.5rem 0 1.25rem 0;
+}
+
+@media (min-width: 768px) {
+  .bauhaus-title {
+    font-size: 5rem;
+  }
+}
+
+.bauhaus-title-blue {
+  background: linear-gradient(90deg, var(--bauhaus-blue), #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bauhaus-subtitle {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  max-width: 520px;
+  line-height: 1.6;
+}
+
+.pulse-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: #4ade80;
+  opacity: 0.75;
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.pulse-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background-color: #22c55e;
+}
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* Right Pane: Art box + Split Buttons */
+.hero-right-pane {
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+.bauhaus-art-box {
+  flex: 1;
+  background: rgba(10, 10, 24, 0.9);
+  min-height: 280px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.bauhaus-art-container {
+  position: relative;
+  width: 220px;
+  height: 220px;
+}
+
+.art-circle-blue {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: var(--bauhaus-blue);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 25px rgba(0, 71, 255, 0.4));
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.art-triangle-red {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 0;
+  height: 0;
+  border-left: 75px solid transparent;
+  border-right: 75px solid transparent;
+  border-bottom: 130px solid var(--bauhaus-red);
+  mix-blend-mode: screen;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 25px rgba(255, 46, 0, 0.4));
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.art-square-yellow {
+  position: absolute;
+  top: 35%;
+  left: 25%;
+  width: 85px;
+  height: 85px;
+  background: var(--bauhaus-yellow);
+  opacity: 0.85;
+  transform: rotate(15deg);
+  filter: drop-shadow(0 0 25px rgba(255, 215, 0, 0.4));
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bauhaus-art-box:hover .art-circle-blue {
+  transform: translate(-10px, -5px) scale(1.05);
+}
+
+.bauhaus-art-box:hover .art-triangle-red {
+  transform: translate(10px, 5px) scale(1.05);
+}
+
+.bauhaus-art-box:hover .art-square-yellow {
+  transform: rotate(35deg) scale(1.1);
+}
+
+/* Action Blocks Grid */
+.action-blocks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 200px;
+}
+
+.action-btn {
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 1.5rem 1rem;
+}
+
+.send-btn {
+  background: var(--bauhaus-blue);
+}
+
+.send-btn:hover {
+  background: #1055ff;
+}
+
+.receive-btn {
+  background: var(--bauhaus-red);
+}
+
+.receive-btn:hover {
+  background: #ff4520;
+}
+
+.action-btn:hover .action-icon {
+  transform: translateY(-4px);
+}
+
+.action-icon {
+  transition: transform 0.25s ease;
+}
+
+.action-btn-title {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.action-btn-sub {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+/* Bauhaus Pillars (3 Columns) */
+.grid-bauhaus-pillars {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .grid-bauhaus-pillars {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.bauhaus-pillar-card {
+  padding: 2.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+
+.bauhaus-pillar-card:hover {
+  transform: translateY(-4px);
+}
+
+.pillar-circle-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
+}
+
+.bauhaus-pillar-card:hover .pillar-circle-badge {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px 0px rgba(255, 255, 255, 0.15);
+}
+
+.pillar-title {
+  font-size: 1.35rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0 0 0.75rem 0;
+}
+
+.pillar-desc {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+  flex: 1;
+}
+
+.pillar-accent-line {
+  height: 3px;
+  width: 0;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bauhaus-pillar-card:hover .pillar-accent-line {
+  width: 100%;
+}
+
+/* Tri-Color Ribbon */
+.tri-color-ribbon {
+  display: flex;
+  height: 4px;
+  width: 100%;
+}
+
+.ribbon-blue {
+  flex: 1;
+  background: var(--bauhaus-blue);
+}
+
+.ribbon-red {
+  flex: 1;
+  background: var(--bauhaus-red);
+}
+
+.ribbon-yellow {
+  flex: 1;
+  background: var(--bauhaus-yellow);
+}
+
 @media (max-width: 768px) {
   .hero-title {
     font-size: 2.35rem;
@@ -466,4 +769,5 @@ code, pre {
     padding: 1rem;
   }
 }
+
 
