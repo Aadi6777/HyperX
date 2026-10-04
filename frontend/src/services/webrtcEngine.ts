@@ -51,6 +51,7 @@ export type WebRtcEventCallback = {
   onDataChannelReady?: (peerId: string, channel: RTCDataChannel) => void;
   onConnectionStatus?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
   onError?: (err: { message: string; code?: string }) => void;
+  onTransferRegistered?: (reg: { transferId: string; status: string }) => void;
 };
 
 export class WebRtcEngine {
@@ -59,6 +60,8 @@ export class WebRtcEngine {
   private dataChannels = new Map<string, RTCDataChannel>();
   private callbacks: WebRtcEventCallback = {};
   private pendingHeaders = new Map<string, ChunkHeader>();
+  private knownPeers = new Map<string, PeerInfo>();
+  private iceCandidateQueues = new Map<string, RTCIceCandidateInit[]>();
 
   public readonly peerId: string;
   public peerName: string;
@@ -67,6 +70,10 @@ export class WebRtcEngine {
   constructor(peerName = 'Peer') {
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
     this.peerName = peerName;
+  }
+
+  public getKnownPeers(): PeerInfo[] {
+    return Array.from(this.knownPeers.values());
   }
 
   public setCallbacks(cbs: WebRtcEventCallback) {
@@ -205,6 +212,32 @@ export class WebRtcEngine {
   }
 
   /**
+   * Ensure an open WebRTC DataChannel exists to the target peer.
+   * If not yet connected, initiates a call and awaits the 'open' state.
+   */
+  public async ensureDataChannel(targetPeerId: string, timeoutMs = 8000): Promise<RTCDataChannel> {
+    const existing = this.dataChannels.get(targetPeerId);
+    if (existing && existing.readyState === 'open') {
+      return existing;
+    }
+
+    if (!this.peerConnections.has(targetPeerId)) {
+      await this.initiateCall(targetPeerId);
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const ch = this.dataChannels.get(targetPeerId);
+      if (ch && ch.readyState === 'open') {
+        return ch;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    throw new Error(`WebRTC DataChannel to peer ${targetPeerId} did not open within ${timeoutMs}ms.`);
+  }
+
+  /**
    * Point-to-Point Chunk Delivery with Real WebRTC Backpressure.
    * Delivers chunk strictly to targetPeerId. Pauses if socket buffer exceeds HIGH_WATERMARK.
    */
@@ -213,9 +246,14 @@ export class WebRtcEngine {
     header: ChunkHeader,
     buffer: ArrayBuffer
   ): Promise<boolean> {
-    const channel = this.dataChannels.get(targetPeerId);
+    let channel = this.dataChannels.get(targetPeerId);
     if (!channel || channel.readyState !== 'open') {
-      return false;
+      try {
+        channel = await this.ensureDataChannel(targetPeerId, 6000);
+      } catch (err) {
+        console.error(`Cannot send chunk, DataChannel not open for peer ${targetPeerId}:`, err);
+        return false;
+      }
     }
 
     // REAL BACKPRESSURE: Wait for buffer to drain before pushing more bytes
@@ -258,25 +296,47 @@ export class WebRtcEngine {
         });
         break;
       }
+      case 'transfer-registered': {
+        this.callbacks.onTransferRegistered?.({
+          transferId: (msg.transferId as string) || '',
+          status: (msg.status as string) || 'REGISTERED',
+        });
+        break;
+      }
       case 'peers': {
         const peers = (msg.peers as PeerInfo[]) || [];
-        this.callbacks.onPeersUpdated?.(peers);
+        this.knownPeers.clear();
+        for (const p of peers) {
+          this.knownPeers.set(p.peerId, p);
+        }
+        this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
         for (const peer of peers) {
           await this.initiateCall(peer.peerId);
         }
         break;
       }
       case 'peer-joined': {
+        const peerId = msg.peerId as string;
+        const peerName = (msg.peerName as string) || 'Peer';
+        if (peerId && peerId !== this.peerId) {
+          this.knownPeers.set(peerId, { peerId, peerName });
+          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+        }
         break;
       }
       case 'peer-left': {
         const peerId = msg.peerId as string;
-        const pc = this.peerConnections.get(peerId);
-        if (pc) {
-          pc.close();
-          this.peerConnections.delete(peerId);
-          this.dataChannels.delete(peerId);
-          this.pendingHeaders.delete(peerId);
+        if (peerId) {
+          this.knownPeers.delete(peerId);
+          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+          const pc = this.peerConnections.get(peerId);
+          if (pc) {
+            pc.close();
+            this.peerConnections.delete(peerId);
+            this.dataChannels.delete(peerId);
+            this.pendingHeaders.delete(peerId);
+            this.iceCandidateQueues.delete(peerId);
+          }
         }
         break;
       }
@@ -419,6 +479,18 @@ export class WebRtcEngine {
   private async handleOffer(senderPeerId: string, sdp: RTCSessionDescriptionInit) {
     const pc = this.createPeerConnection(senderPeerId);
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Drain any buffered ICE candidates for this peer
+    const queued = this.iceCandidateQueues.get(senderPeerId) || [];
+    for (const cand of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.warn('Error applying queued ICE candidate:', e);
+      }
+    }
+    this.iceCandidateQueues.delete(senderPeerId);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -435,13 +507,32 @@ export class WebRtcEngine {
     const pc = this.peerConnections.get(senderPeerId);
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+      // Drain any buffered ICE candidates
+      const queued = this.iceCandidateQueues.get(senderPeerId) || [];
+      for (const cand of queued) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('Error applying queued ICE candidate:', e);
+        }
+      }
+      this.iceCandidateQueues.delete(senderPeerId);
     }
   }
 
   private async handleIceCandidate(senderPeerId: string, candidate: RTCIceCandidateInit) {
     const pc = this.peerConnections.get(senderPeerId);
-    if (pc && candidate) {
+    if (!pc || !pc.remoteDescription) {
+      const queue = this.iceCandidateQueues.get(senderPeerId) || [];
+      queue.push(candidate);
+      this.iceCandidateQueues.set(senderPeerId, queue);
+      return;
+    }
+    try {
       await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.warn('Error adding ICE candidate:', e);
     }
   }
 }

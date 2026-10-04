@@ -139,12 +139,18 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
         broadcastToWorkspace(workspaceId, peerId, joinedNotify);
     }
 
-    private void handleTransferAnnounce(WebSocketSession session, SignalingMessage msg) {
+    private void handleTransferAnnounce(WebSocketSession session, SignalingMessage msg) throws IOException {
         String transferId = msg.getTransferId();
         PeerMeta sender = sessionToPeer.get(session.getId());
         if (transferId != null && sender != null) {
-            transferRegistry.put(transferId.toUpperCase().trim(), sender.peerId());
-            log.info("Registered transfer code {} -> senderPeerId {}", transferId, sender.peerId());
+            String normCode = transferId.toUpperCase().trim();
+            transferRegistry.put(normCode, sender.peerId());
+            log.info("Registered transfer code {} -> senderPeerId {}", normCode, sender.peerId());
+            send(session, Map.of(
+                "type", "transfer-registered",
+                "transferId", normCode,
+                "status", "REGISTERED"
+            ));
         }
     }
 
@@ -179,16 +185,34 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
         String workspaceId = msg.getWorkspaceId();
         String targetPeerId = msg.getTargetPeerId();
 
-        if (workspaceId == null || targetPeerId == null) {
+        if (targetPeerId == null) {
             return;
         }
 
-        Map<String, WebSocketSession> peers = workspaceSessions.get(workspaceId);
-        if (peers != null) {
-            WebSocketSession targetSession = peers.get(targetPeerId);
-            if (targetSession != null && targetSession.isOpen()) {
-                send(targetSession, msg);
+        WebSocketSession targetSession = null;
+        if (workspaceId != null) {
+            Map<String, WebSocketSession> peers = workspaceSessions.get(workspaceId);
+            if (peers != null) {
+                targetSession = peers.get(targetPeerId);
             }
+        }
+
+        // Resilient fallback: locate target peer across all active workspaces
+        if (targetSession == null || !targetSession.isOpen()) {
+            for (Map<String, WebSocketSession> peers : workspaceSessions.values()) {
+                if (peers.containsKey(targetPeerId)) {
+                    targetSession = peers.get(targetPeerId);
+                    if (targetSession != null && targetSession.isOpen()) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (targetSession != null && targetSession.isOpen()) {
+            send(targetSession, msg);
+        } else {
+            log.warn("handleForward: Target peer {} not found or disconnected", targetPeerId);
         }
     }
 

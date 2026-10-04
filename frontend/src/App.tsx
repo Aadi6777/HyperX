@@ -178,9 +178,16 @@ export const App: React.FC = () => {
 
         {/* Center Live Mesh Telemetry Pill */}
         <div className="nav-telemetry-badge hidden-mobile">
-          <span className="pill-dot-pulse" />
+          <span
+            className="pill-dot-pulse"
+            style={{ background: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-red)' }}
+          />
           <span style={{ color: 'var(--text-secondary)' }}>
             STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-yellow)' }}>{signalingStatus}</strong>
+          </span>
+          <span className="telemetry-separator">|</span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            PEERS: <strong style={{ color: peers.length > 0 ? 'var(--accent-green)' : '#fff' }}>{signalingStatus === 'CONNECTED' ? `${peers.length + 1} ONLINE` : 'OFFLINE'}</strong>
           </span>
           <span className="telemetry-separator">|</span>
           <span style={{ color: 'var(--text-muted)' }}>REGION: <strong>ap-south-1</strong></span>
@@ -242,6 +249,7 @@ export const App: React.FC = () => {
             onSelectWorkspace={(ws) => setActiveWorkspace(ws)}
             onWorkspacesChanged={loadWorkspaces}
             members={members}
+            onlinePeersCount={peers.length}
             signalingStatus={signalingStatus}
           />
         )}

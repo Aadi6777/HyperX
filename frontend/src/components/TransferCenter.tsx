@@ -95,6 +95,12 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   // In-memory chunk hashes for receiver integrity validation
   const receivedChunkHashesRef = useRef<Map<string, string[]>>(new Map());
 
+  // Ref to always access latest transfers inside WebRTC event callbacks without stale closures
+  const transfersRef = useRef<LocalTransfer[]>([]);
+  useEffect(() => {
+    transfersRef.current = transfers;
+  }, [transfers]);
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -227,11 +233,30 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     if (!webrtcEngine) return;
 
     webrtcEngine.setCallbacks({
+      onError: (err) => {
+        if (err.code === 'TRANSFER_NOT_FOUND') {
+          setTransfers((prev) =>
+            prev.map((t) =>
+              t.direction === 'RECEIVE' && t.status === 'PENDING_PEER'
+                ? {
+                    ...t,
+                    status: 'ERROR',
+                    errorMessage: err.message || 'Transfer code not found or sender is offline.',
+                  }
+                : t
+            )
+          );
+        }
+      },
+
       // Sender receives request from a peer who entered their transfer code
       onTransferRequested: (req) => {
         const { transferId, receiverPeerId, receiverPeerName } = req;
-        const transfer = transfers.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
-        if (!transfer) return;
+        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
+        if (!transfer) {
+          console.warn(`No transfer found for code ${transferId}`);
+          return;
+        }
 
         // Associate target peer with transfer session
         const ctrl = transferControlsRef.current.get(transfer.fileId);
@@ -273,7 +298,9 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       onTransferAccepted: (acc) => {
         const { transferId, senderPeerId, manifest } = acc;
         setTransfers((prev) => {
-          if (prev.some((t) => t.fileId === manifest.fileId)) return prev;
+          const filtered = prev.filter(
+            (t) => t.transferId.toUpperCase() !== transferId.toUpperCase() && t.fileId !== manifest.fileId
+          );
           const incoming: LocalTransfer = {
             fileId: manifest.fileId,
             transferId,
@@ -291,7 +318,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
             targetPeerId: senderPeerId,
             targetPeerName: manifest.senderName || 'Peer',
           };
-          return [incoming, ...prev];
+          return [incoming, ...filtered];
         });
 
         // Initialize metadata in IndexedDB
@@ -314,7 +341,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       // Sender receives bitmask sync of acknowledged chunks (Resumable Bitmask Recovery)
       onBitmaskSynced: (sync) => {
         const { transferId, completedChunks } = sync;
-        const transfer = transfers.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
+        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
         if (!transfer) return;
 
         const ctrl = transferControlsRef.current.get(transfer.fileId);
@@ -344,7 +371,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
 
       onChunkReceived: handleIncomingChunk,
     });
-  }, [webrtcEngine, transfers, handleIncomingChunk]);
+  }, [webrtcEngine, handleIncomingChunk]);
 
   // Sender prepares file: calculates progressive chunk hashes and registers transfer code
   const handleFiles = async (files: FileList | null) => {
@@ -475,23 +502,42 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         ivArr = encrypted.iv;
       }
 
-      // Point-to-Point Delivery with REAL BACKPRESSURE
-      const sent = await webrtcEngine.sendChunkToPeer(
-        targetPeerId,
-        {
-          type: 'CHUNK',
-          fileId,
-          chunkIndex: idx,
-          totalChunks,
-          isEncrypted: !!key,
-          iv: ivArr,
-        },
-        buffer
-      );
+      // Point-to-Point Delivery with REAL BACKPRESSURE & RETRIES
+      let sent = false;
+      let retries = 0;
+      while (!sent && retries < 40 && !ctrl?.isCancelled) {
+        sent = await webrtcEngine.sendChunkToPeer(
+          targetPeerId,
+          {
+            type: 'CHUNK',
+            fileId,
+            chunkIndex: idx,
+            totalChunks,
+            isEncrypted: !!key,
+            iv: ivArr,
+          },
+          buffer
+        );
+        if (!sent) {
+          retries++;
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      }
 
       if (!sent) {
-        console.warn(`DataChannel not ready or closed for peer ${targetPeerId}. Awaiting buffer drain...`);
-        await new Promise((r) => setTimeout(r, 100));
+        console.error(`Failed to send chunk #${idx} to peer ${targetPeerId} after retries.`);
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.fileId === fileId
+              ? {
+                  ...t,
+                  status: 'ERROR',
+                  errorMessage: `Connection lost to peer ${targetPeerId} while sending slice #${idx}.`,
+                }
+              : t
+          )
+        );
+        return;
       }
 
       chunksMap[idx] = true;
@@ -543,14 +589,36 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     setReceiveLoading(true);
     setReceiveError(null);
 
-    // Emit real transfer request to signaling server
+    // 1. Immediately create a visible pending transfer card so the receiver sees immediate feedback!
+    setTransfers((prev) => {
+      if (prev.some((t) => t.transferId.toUpperCase() === code)) {
+        return prev;
+      }
+      const pending: LocalTransfer = {
+        fileId: 'pending_' + code,
+        transferId: code,
+        fileName: 'P2P Stream: ' + code,
+        fileSize: 0,
+        totalChunks: 0,
+        chunksCompleted: 0,
+        percentage: 0,
+        speedMBps: 0,
+        status: 'PENDING_PEER',
+        isEncrypted: false,
+        chunksMap: [],
+        direction: 'RECEIVE',
+      };
+      return [pending, ...prev];
+    });
+
+    // 2. Emit real transfer request to signaling server
     webrtcEngine.requestTransfer(code);
 
     setTimeout(() => {
       setReceiveLoading(false);
       setShowReceiveModal(false);
       setReceiveCodeInput('');
-    }, 600);
+    }, 400);
   };
 
   const togglePauseResume = (fileId: string) => {

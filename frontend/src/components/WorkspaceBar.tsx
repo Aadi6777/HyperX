@@ -8,6 +8,7 @@ interface WorkspaceBarProps {
   onSelectWorkspace: (ws: Workspace) => void;
   onWorkspacesChanged: () => void;
   members: Member[];
+  onlinePeersCount?: number;
   signalingStatus: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
 }
 
@@ -17,6 +18,7 @@ export const WorkspaceBar: React.FC<WorkspaceBarProps> = ({
   onSelectWorkspace,
   onWorkspacesChanged,
   members,
+  onlinePeersCount = 0,
   signalingStatus,
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -115,11 +117,25 @@ export const WorkspaceBar: React.FC<WorkspaceBarProps> = ({
           </span>
         </div>
 
-        {/* Members Count & Invite */}
+        {/* Members Count & Online Peers */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div className="badge-tag" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <Users size={12} />
-            <span>{members.length} {members.length === 1 ? 'Peer' : 'Peers'}</span>
+          <div
+            className="badge-tag"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              borderColor: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'rgba(255, 255, 255, 0.1)',
+              background: signalingStatus === 'CONNECTED' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+            }}
+            title="Real-time WebRTC Connected Peers in this Mesh"
+          >
+            <Users size={12} color={signalingStatus === 'CONNECTED' ? '#10b981' : 'var(--text-muted)'} />
+            <span>
+              {signalingStatus === 'CONNECTED'
+                ? `${onlinePeersCount + 1} Online (You${onlinePeersCount > 0 ? ` + ${onlinePeersCount} ${onlinePeersCount === 1 ? 'Peer' : 'Peers'}` : ''})`
+                : `${members.length} Members`}
+            </span>
           </div>
 
           <button
