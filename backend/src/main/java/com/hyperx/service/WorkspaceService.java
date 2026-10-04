@@ -219,4 +219,9 @@ public class WorkspaceService {
             .completedAt(tr.getCompletedAt())
             .build();
     }
+
+    @Transactional(readOnly = true)
+    public boolean isUserMemberOfWorkspace(UUID userId, UUID workspaceId) {
+        return memberRepository.existsByWorkspaceIdAndUserId(workspaceId, userId);
+    }
 }

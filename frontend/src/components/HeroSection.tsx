@@ -40,37 +40,37 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend, onSelect
               <span className="beacon-ping" />
               <span className="beacon-dot" />
             </div>
-            <span className="beacon-text">WebRTC Ready // 256-bit AES // Mumbai ap-south-1</span>
+            <span className="beacon-text">STUN-assisted Direct P2P // AES-256-GCM // Mumbai ap-south-1</span>
           </div>
 
-          {/* Real-time Memory & Mesh Telemetry HUD */}
+          {/* Real-time Memory Model Comparison */}
           <div className="hero-telemetry-card">
             <div className="hud-bench-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Activity size={15} style={{ color: 'var(--bauhaus-blue)' }} />
-                <span className="hud-bench-title">V8 HEAP CONSUMPTION BENCHMARK</span>
+                <span className="hud-bench-title">MEMORY MODEL COMPARISON</span>
               </div>
-              <span className="hud-bench-badge">60% LESS RAM</span>
+              <span className="hud-bench-badge">SLICED STREAM</span>
             </div>
 
             <div className="hud-bench-rows">
               <div className="bench-row traditional">
                 <div className="bench-row-info">
-                  <span className="bench-label">Traditional Cloud Upload (50GB File)</span>
-                  <span className="bench-val text-red">4.8 GB RAM &bull; Tab Crashes (OOM)</span>
+                  <span className="bench-label">Monolithic In-Memory Buffer</span>
+                  <span className="bench-val text-red">Heap Exhaustion / OOM on Multi-GB</span>
                 </div>
                 <div className="bench-bar-track">
-                  <div className="bench-bar-fill bg-bauhaus-red" style={{ width: '92%' }} />
+                  <div className="bench-bar-fill bg-bauhaus-red" style={{ width: '88%' }} />
                 </div>
               </div>
 
               <div className="bench-row hyperx">
                 <div className="bench-row-info">
-                  <span className="bench-label">HyperX Zero-RAM Streamer (50GB File)</span>
-                  <span className="bench-val text-blue">14.6 MB RAM &bull; Flatline Resilient</span>
+                  <span className="bench-label">HyperX Sliced Stream + Drain</span>
+                  <span className="bench-val text-blue">Constant Chunk Memory &bull; Backpressure Regulated</span>
                 </div>
                 <div className="bench-bar-track">
-                  <div className="bench-bar-fill bg-bauhaus-blue" style={{ width: '12%' }} />
+                  <div className="bench-bar-fill bg-bauhaus-blue" style={{ width: '18%' }} />
                 </div>
               </div>
             </div>

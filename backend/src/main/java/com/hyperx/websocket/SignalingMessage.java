@@ -27,10 +27,16 @@ public class SignalingMessage {
     private String text;
     private Long timestamp;
 
-    // File transfer metadata
+    // File transfer metadata & negotiation
+    private String transferId;
+    private String token;
     private String fileId;
     private String fileName;
     private Long fileSize;
     private Integer chunkCount;
+    private Integer totalChunks;
     private String checksum;
+    private Boolean isEncrypted;
+    private Object manifest;
+    private Object completedChunks;
 }

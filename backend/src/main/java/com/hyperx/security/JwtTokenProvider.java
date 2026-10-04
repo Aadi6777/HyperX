@@ -20,16 +20,17 @@ public class JwtTokenProvider {
     private final long jwtExpirationMs;
 
     public JwtTokenProvider(
-        @Value("${hyperx.jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}") String secret,
+        @Value("${hyperx.jwt.secret:}") String secret,
         @Value("${hyperx.jwt.expiration-ms:86400000}") long jwtExpirationMs
     ) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            // Pad to at least 256 bits if needed
-            byte[] padded = new byte[32];
-            System.arraycopy(keyBytes, 0, padded, 0, Math.min(keyBytes.length, 32));
-            this.key = Keys.hmacShaKeyFor(padded);
+        if (secret == null || secret.isBlank()) {
+            log.warn("HYPERX SECURITY NOTICE: No JWT secret configured in HYPERX_JWT_SECRET. Generating secure ephemeral 256-bit HMAC-SHA key.");
+            this.key = Jwts.SIG.HS256.key().build();
         } else {
+            byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+            if (keyBytes.length < 32) {
+                throw new IllegalArgumentException("HYPERX_JWT_SECRET must be at least 256 bits (32 characters). Provided length: " + keyBytes.length);
+            }
             this.key = Keys.hmacShaKeyFor(keyBytes);
         }
         this.jwtExpirationMs = jwtExpirationMs;

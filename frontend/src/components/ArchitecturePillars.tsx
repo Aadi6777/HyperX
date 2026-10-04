@@ -20,8 +20,8 @@ export const ArchitecturePillars: React.FC = () => {
       phase: 'Phase 4 & 9',
       title: 'Direct WebRTC Speed',
       description:
-        'Binary chunks travel directly peer-to-peer over encrypted DataChannels. Spring Boot coordinates STUN/TURN ICE negotiation and room discovery, never routing or storing bulk payloads.',
-      tech: 'STUN/TURN + WebRTC DataChannels',
+        'Binary chunks travel directly peer-to-peer over encrypted DataChannels. Spring Boot coordinates STUN ICE negotiation and room discovery, never routing or storing bulk payloads.',
+      tech: 'STUN-assisted WebRTC DataChannels',
     },
     {
       icon: <ShieldCheck size={30} color="#ffffff" />,

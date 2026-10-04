@@ -57,6 +57,7 @@ export async function encryptChunk(chunkData: ArrayBuffer, key: CryptoKey): Prom
 
 /**
  * Decrypt a chunk using AES-256-GCM with its original IV.
+ * Throws an error on decryption failure (e.g. wrong key, corrupted ciphertext).
  */
 export async function decryptChunk(cipherData: ArrayBuffer, ivArray: number[], key: CryptoKey): Promise<ArrayBuffer> {
   const iv = new Uint8Array(ivArray);
@@ -71,10 +72,32 @@ export async function decryptChunk(cipherData: ArrayBuffer, ivArray: number[], k
 }
 
 /**
- * Compute SHA-256 hexadecimal hash string for checksum verification.
+ * Compute SHA-256 hexadecimal hash string for an ArrayBuffer.
  */
 export async function computeSha256(data: ArrayBuffer): Promise<string> {
   const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Compute the Merkle/Manifest root SHA-256 hash over an array of sequential chunk hashes.
+ * Ensures whole-file end-to-end cryptographic integrity without loading 50GB into RAM at once.
+ */
+export async function computeManifestRootHash(chunkHashes: string[]): Promise<string> {
+  const enc = new TextEncoder();
+  const concatenated = chunkHashes.join(':');
+  const buffer = enc.encode(concatenated).buffer;
+  return computeSha256(buffer);
+}
+
+/**
+ * Generates a cryptographically strong, human-shareable random passphrase.
+ */
+export function generateSecurePassphrase(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const array = new Uint8Array(16);
+  window.crypto.getRandomValues(array);
+  const code = Array.from(array, byte => chars[byte % chars.length]).join('');
+  return `${code.substring(0, 4)}-${code.substring(4, 8)}-${code.substring(8, 12)}-${code.substring(12, 16)}`;
 }

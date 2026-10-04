@@ -1,7 +1,10 @@
 /**
- * HyperX Phase 4 & 9: WebRTC Signaling Engine & Peer Collaboration
- * Coordinates STUN/TURN, SDP offer/answer exchanges, and DataChannels.
+ * HyperX Phase 4, 5 & 9: Authenticated WebRTC Signaling & Point-to-Point DataChannel Engine
+ * Point-to-point chunk delivery, active backpressure control, bitmask negotiation, and JWT authentication.
  */
+
+import { getStoredToken } from './authService';
+import { ChunkHeader, HIGH_WATERMARK, waitForBufferDrain } from './chunkEngine';
 
 export interface PeerInfo {
   peerId: string;
@@ -16,15 +19,16 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface FileAnnouncement {
+export interface FileManifest {
+  transferId: string;
   fileId: string;
   fileName: string;
   fileSize: number;
   totalChunks: number;
-  senderPeerId: string;
-  senderName: string;
-  checksum?: string;
   isEncrypted: boolean;
+  manifestHash?: string;
+  senderPeerId?: string;
+  senderName?: string;
 }
 
 export interface IncomingChunkPayload {
@@ -40,10 +44,13 @@ export interface IncomingChunkPayload {
 export type WebRtcEventCallback = {
   onPeersUpdated?: (peers: PeerInfo[]) => void;
   onChatMessage?: (msg: ChatMessage) => void;
-  onFileAnnounced?: (announcement: FileAnnouncement) => void;
+  onTransferRequested?: (req: { transferId: string; receiverPeerId: string; receiverPeerName: string }) => void;
+  onTransferAccepted?: (acc: { transferId: string; senderPeerId: string; manifest: FileManifest }) => void;
+  onBitmaskSynced?: (sync: { transferId: string; senderPeerId: string; completedChunks: number[] }) => void;
   onChunkReceived?: (payload: IncomingChunkPayload) => void;
   onDataChannelReady?: (peerId: string, channel: RTCDataChannel) => void;
   onConnectionStatus?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
+  onError?: (err: { message: string; code?: string }) => void;
 };
 
 export class WebRtcEngine {
@@ -51,14 +58,7 @@ export class WebRtcEngine {
   private peerConnections = new Map<string, RTCPeerConnection>();
   private dataChannels = new Map<string, RTCDataChannel>();
   private callbacks: WebRtcEventCallback = {};
-  private pendingHeaders = new Map<string, {
-    type: 'CHUNK';
-    fileId: string;
-    chunkIndex: number;
-    totalChunks: number;
-    isEncrypted: boolean;
-    iv?: number[];
-  }>();
+  private pendingHeaders = new Map<string, ChunkHeader>();
 
   public readonly peerId: string;
   public peerName: string;
@@ -89,6 +89,13 @@ export class WebRtcEngine {
       }
     }
 
+    // Attach JWT authentication query parameter
+    const token = getStoredToken();
+    if (token) {
+      const separator = wsUrl.includes('?') ? '&' : '?';
+      wsUrl += `${separator}token=${encodeURIComponent(token)}`;
+    }
+
     try {
       this.callbacks.onConnectionStatus?.('CONNECTING');
       this.ws = new WebSocket(wsUrl);
@@ -100,6 +107,7 @@ export class WebRtcEngine {
           workspaceId,
           peerId: this.peerId,
           peerName: this.peerName,
+          token: token || undefined,
         });
       };
 
@@ -137,7 +145,6 @@ export class WebRtcEngine {
 
   public sendChat(text: string) {
     if (!this.currentWorkspaceId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      // Local echo fallback
       this.callbacks.onChatMessage?.({
         id: Math.random().toString(36).substring(2, 9),
         senderPeerId: this.peerId,
@@ -158,31 +165,72 @@ export class WebRtcEngine {
     });
   }
 
-  public announceFile(announcement: Omit<FileAnnouncement, 'senderPeerId' | 'senderName'>) {
+  // --- Point-to-Point Transfer Session Protocol ---
+
+  public announceTransfer(transferId: string, manifest: FileManifest) {
     this.sendWs({
-      type: 'file-announcement',
+      type: 'transfer-announce',
       workspaceId: this.currentWorkspaceId,
-      senderPeerId: this.peerId,
-      senderName: this.peerName,
-      ...announcement,
+      transferId,
+      manifest,
     });
   }
 
-  public broadcastChunk(header: Record<string, unknown>, buffer: ArrayBuffer): boolean {
-    const json = JSON.stringify(header);
-    let sentAny = false;
-    for (const [, channel] of this.dataChannels) {
-      if (channel.readyState === 'open') {
-        try {
-          channel.send(json);
-          channel.send(buffer);
-          sentAny = true;
-        } catch (err) {
-          console.error('Failed to send chunk over data channel:', err);
-        }
-      }
+  public requestTransfer(transferId: string) {
+    this.sendWs({
+      type: 'transfer-request',
+      workspaceId: this.currentWorkspaceId,
+      transferId,
+    });
+  }
+
+  public acceptTransfer(transferId: string, receiverPeerId: string, manifest: FileManifest) {
+    this.sendWs({
+      type: 'transfer-accept',
+      workspaceId: this.currentWorkspaceId,
+      transferId,
+      targetPeerId: receiverPeerId,
+      manifest,
+    });
+  }
+
+  public syncBitmask(transferId: string, targetPeerId: string, completedChunks: number[]) {
+    this.sendWs({
+      type: 'bitmask-sync',
+      workspaceId: this.currentWorkspaceId,
+      transferId,
+      targetPeerId,
+      completedChunks,
+    });
+  }
+
+  /**
+   * Point-to-Point Chunk Delivery with Real WebRTC Backpressure.
+   * Delivers chunk strictly to targetPeerId. Pauses if socket buffer exceeds HIGH_WATERMARK.
+   */
+  public async sendChunkToPeer(
+    targetPeerId: string,
+    header: ChunkHeader,
+    buffer: ArrayBuffer
+  ): Promise<boolean> {
+    const channel = this.dataChannels.get(targetPeerId);
+    if (!channel || channel.readyState !== 'open') {
+      return false;
     }
-    return sentAny;
+
+    // REAL BACKPRESSURE: Wait for buffer to drain before pushing more bytes
+    if (channel.bufferedAmount > HIGH_WATERMARK) {
+      await waitForBufferDrain(channel);
+    }
+
+    try {
+      channel.send(JSON.stringify(header));
+      channel.send(buffer);
+      return true;
+    } catch (err) {
+      console.error(`Failed to send chunk to peer ${targetPeerId}:`, err);
+      return false;
+    }
   }
 
   public getDataChannel(peerId: string): RTCDataChannel | undefined {
@@ -203,21 +251,22 @@ export class WebRtcEngine {
     const type = msg.type as string;
 
     switch (type) {
+      case 'error': {
+        this.callbacks.onError?.({
+          message: (msg.message as string) || 'Signaling error',
+          code: msg.code as string,
+        });
+        break;
+      }
       case 'peers': {
         const peers = (msg.peers as PeerInfo[]) || [];
         this.callbacks.onPeersUpdated?.(peers);
-        // Initiate WebRTC connection to existing peers
         for (const peer of peers) {
           await this.initiateCall(peer.peerId);
         }
         break;
       }
       case 'peer-joined': {
-        const peerId = msg.peerId as string;
-        const peerName = (msg.peerName as string) || 'Peer';
-        if (peerId) {
-          console.debug('Peer connected to workspace:', peerName, peerId);
-        }
         break;
       }
       case 'peer-left': {
@@ -253,22 +302,34 @@ export class WebRtcEngine {
         });
         break;
       }
-      case 'file-announcement': {
-        this.callbacks.onFileAnnounced?.({
-          fileId: msg.fileId as string,
-          fileName: msg.fileName as string,
-          fileSize: msg.fileSize as number,
-          totalChunks: msg.totalChunks as number,
+      case 'transfer-request': {
+        this.callbacks.onTransferRequested?.({
+          transferId: msg.transferId as string,
+          receiverPeerId: msg.senderPeerId as string,
+          receiverPeerName: (msg.senderName as string) || 'Peer',
+        });
+        break;
+      }
+      case 'transfer-accept': {
+        this.callbacks.onTransferAccepted?.({
+          transferId: msg.transferId as string,
           senderPeerId: msg.senderPeerId as string,
-          senderName: msg.senderName as string,
-          checksum: msg.checksum as string,
-          isEncrypted: !!msg.isEncrypted,
+          manifest: msg.manifest as FileManifest,
+        });
+        break;
+      }
+      case 'bitmask-sync': {
+        this.callbacks.onBitmaskSynced?.({
+          transferId: msg.transferId as string,
+          senderPeerId: msg.senderPeerId as string,
+          completedChunks: (msg.completedChunks as number[]) || [],
         });
         break;
       }
     }
   }
 
+  // STUN configuration (honest labeling: STUN-assisted direct P2P)
   private createPeerConnection(targetPeerId: string): RTCPeerConnection {
     const pc = new RTCPeerConnection({
       iceServers: [

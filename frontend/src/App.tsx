@@ -269,12 +269,12 @@ export const App: React.FC = () => {
             <div className="icon-box cyan">
               <Terminal size={20} />
             </div>
-            <span className="badge-tag">Production Verified &bull; Supabase</span>
+            <span className="badge-tag">P2P DataMesh &bull; Supabase Connected</span>
           </div>
 
           <h3 className="card-title">HyperX Infrastructure Runtime</h3>
           <p className="card-desc">
-            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
           </p>
 
           <pre style={{
