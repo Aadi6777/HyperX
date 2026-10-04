@@ -29,43 +29,50 @@ export const App: React.FC = () => {
   const [peers, setPeers] = useState<PeerInfo[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [signalingStatus, setSignalingStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'CONNECTING'>('DISCONNECTED');
+  const [activeEngine, setActiveEngine] = useState<WebRtcEngine | null>(null);
 
   const webrtcEngineRef = useRef<WebRtcEngine | null>(null);
   const transferCenterRef = useRef<HTMLDivElement>(null);
   const transferControlsRef = useRef<{ triggerFileSelect: () => void; promptReceiveCode: () => void } | null>(null);
 
-  // Initialize Auth on startup
+  // Initialize Auth & Workspace on startup
   useEffect(() => {
-    fetchCurrentUser().then((user) => {
-      if (user) {
-        setCurrentUser(user);
+    fetchCurrentUser()
+      .then((user) => {
+        if (user) {
+          setCurrentUser(user);
+        }
         loadWorkspaces();
-      }
-    });
+      })
+      .catch(() => {
+        loadWorkspaces();
+      });
   }, []);
 
   const loadWorkspaces = async () => {
     try {
       const list = await fetchWorkspaces();
-      setWorkspaces(list);
-      if (list.length > 0) {
+      if (list && list.length > 0) {
+        setWorkspaces(list);
         setActiveWorkspace(list[0]);
+        return;
       }
     } catch {
-      // Fallback workspace for offline/standalone mode
-      const fallback: Workspace = {
-        id: 'ws_local_demo',
-        name: 'HyperX Primary Cluster',
-        slug: 'primary-cluster',
-        ownerId: 'peer_local',
-        ownerName: 'HyperX Operator',
-        currentUserRole: 'OWNER',
-        memberCount: 2,
-        createdAt: new Date().toISOString(),
-      };
-      setWorkspaces([fallback]);
-      setActiveWorkspace(fallback);
+      // Fallback workspace for instant guest/standalone mode
     }
+
+    const fallback: Workspace = {
+      id: 'hyperx-public-mesh',
+      name: 'HyperX Global Mesh',
+      slug: 'global-mesh',
+      ownerId: 'peer_public',
+      ownerName: 'HyperX Mesh',
+      currentUserRole: 'MEMBER',
+      memberCount: 1,
+      createdAt: new Date().toISOString(),
+    };
+    setWorkspaces([fallback]);
+    setActiveWorkspace(fallback);
   };
 
   // When active workspace changes, load its members & connect WebRTC signaling
@@ -95,10 +102,11 @@ export const App: React.FC = () => {
         ]);
       });
 
-    // Initialize WebRTC Engine
+    // Initialize WebRTC Engine with state setter so child components receive it immediately
     const peerName = currentUser?.fullName || 'Peer_' + Math.random().toString(36).substring(2, 6);
     const engine = new WebRtcEngine(peerName);
     webrtcEngineRef.current = engine;
+    setActiveEngine(engine);
 
     engine.setCallbacks({
       onPeersUpdated: (updatedPeers) => setPeers(updatedPeers),
@@ -110,6 +118,7 @@ export const App: React.FC = () => {
 
     return () => {
       engine.disconnect();
+      setActiveEngine(null);
     };
   }, [activeWorkspace, currentUser]);
 
@@ -241,7 +250,7 @@ export const App: React.FC = () => {
         <div ref={transferCenterRef}>
           <TransferCenter
             workspaceId={activeWorkspace?.id}
-            webrtcEngine={webrtcEngineRef.current}
+            webrtcEngine={activeEngine}
             onMountControls={(ctrls) => {
               transferControlsRef.current = ctrls;
             }}

@@ -79,6 +79,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const [receiveCodeInput, setReceiveCodeInput] = useState('');
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [receiveLoading, setReceiveLoading] = useState(false);
+  const [receiveError, setReceiveError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -534,14 +536,21 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     if (!code) return;
 
     if (!webrtcEngine) {
-      alert('Signaling engine is not connected. Please ensure you are connected to a workspace.');
+      setReceiveError('P2P mesh connection is initializing. Please wait a moment and try again.');
       return;
     }
 
+    setReceiveLoading(true);
+    setReceiveError(null);
+
     // Emit real transfer request to signaling server
     webrtcEngine.requestTransfer(code);
-    setShowReceiveModal(false);
-    setReceiveCodeInput('');
+
+    setTimeout(() => {
+      setReceiveLoading(false);
+      setShowReceiveModal(false);
+      setReceiveCodeInput('');
+    }, 600);
   };
 
   const togglePauseResume = (fileId: string) => {
@@ -779,21 +788,29 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                 outline: 'none',
               }}
             />
+            {receiveError && (
+              <div style={{ color: 'var(--bauhaus-red)', fontSize: '0.8rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255, 46, 0, 0.1)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255, 46, 0, 0.3)' }}>
+                <AlertTriangle size={15} />
+                <span>{receiveError}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => setShowReceiveModal(false)}
+                onClick={() => { setShowReceiveModal(false); setReceiveError(null); }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="btn-hyper-nav"
-                style={{ background: 'var(--bauhaus-red)' }}
+                style={{ background: 'var(--bauhaus-red)', opacity: receiveLoading ? 0.7 : 1 }}
                 onClick={handleConnectStreamByCode}
+                disabled={receiveLoading}
               >
-                Establish P2P Stream
+                {receiveLoading ? 'Searching Mesh...' : 'Establish P2P Stream'}
               </button>
             </div>
           </div>
