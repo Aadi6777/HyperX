@@ -1,35 +1,38 @@
 :root {
-  --bg-primary: #050511;
-  --bg-secondary: #0a0a1a;
-  --bg-card: rgba(13, 14, 28, 0.75);
-  --bg-card-hover: rgba(20, 22, 42, 0.9);
+  --bg-primary: #030712;
+  --bg-secondary: #080d1a;
+  --bg-card: rgba(11, 18, 33, 0.72);
+  --bg-card-hover: rgba(16, 26, 48, 0.88);
+  --bg-card-elevated: rgba(17, 24, 39, 0.95);
   
   --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-active: #0047ff;
-  --border-glow: rgba(0, 71, 255, 0.25);
+  --border-accent: rgba(99, 102, 241, 0.35);
+  --border-cyan: rgba(6, 182, 212, 0.4);
+  --border-glow: 0 0 20px rgba(99, 102, 241, 0.2);
   
-  --text-primary: #ffffff;
+  --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   
-  --bauhaus-blue: #0047ff;
-  --bauhaus-red: #ff2e00;
-  --bauhaus-yellow: #ffd700;
-  --accent-cyan: #00f2fe;
-  --cyan-glow: #00f2fe;
-  --accent-lime: #e5fe40;
-  --accent-emerald: #10b981;
+  /* HyperX Signature Colors */
+  --hyper-indigo: #6366f1;
+  --hyper-violet: #8b5cf6;
+  --hyper-cyan: #06b6d4;
+  --hyper-emerald: #10b981;
+  --hyper-rose: #f43f5e;
+  --hyper-amber: #f59e0b;
   
   --font-heading: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  --shadow-card: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 14px;
+  --shadow-card: 0 16px 40px -12px rgba(0, 0, 0, 0.75);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
   
-  --transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -47,10 +50,12 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   background-image: 
-    radial-gradient(#333 1px, transparent 1px),
+    radial-gradient(circle at 18% 18%, rgba(99, 102, 241, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 82% 24%, rgba(6, 182, 212, 0.10) 0%, transparent 40%),
+    radial-gradient(circle at 50% 85%, rgba(139, 92, 246, 0.08) 0%, transparent 55%),
     linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 32px 32px, 128px 128px, 128px 128px;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 64px 64px, 64px 64px;
   background-attachment: fixed;
 }
 
@@ -457,317 +462,500 @@ code, pre {
   box-shadow: 0 0 25px rgba(0, 242, 254, 0.25);
 }
 
-/* Bauhaus Hero Layout */
-.bauhaus-hero-grid {
+/* =============================================================================
+   HyperX Signature Logo & Navbar Telemetry
+   ============================================================================= */
+.hyperx-logo-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--hyper-indigo), var(--hyper-cyan));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-family: var(--font-heading);
+  letter-spacing: -0.05em;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-letter-h {
+  color: #ffffff;
+  font-size: 1.1rem;
+}
+
+.logo-letter-x {
+  color: var(--hyper-cyan);
+  font-size: 1.1rem;
+}
+
+.nav-telemetry-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.35rem 0.9rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+}
+
+.telemetry-separator {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-hyper-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(6, 182, 212, 0.2));
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-hyper-nav:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(6, 182, 212, 0.35));
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.35);
+  transform: translateY(-1px);
+}
+
+/* =============================================================================
+   HyperX Holographic Hero Deck
+   ============================================================================= */
+.hyperx-hero-deck {
+  margin-bottom: 2.5rem;
+}
+
+.hero-grid-container {
   display: grid;
   grid-template-columns: 1fr;
-  min-height: 520px;
+  gap: 2rem;
+  align-items: center;
 }
 
 @media (min-width: 992px) {
-  .bauhaus-hero-grid {
-    grid-template-columns: 7fr 5fr;
+  .hero-grid-container {
+    grid-template-columns: 1.15fr 0.85fr;
   }
 }
 
-.hero-left-pane {
-  padding: 3rem 2.5rem;
+.hero-briefing {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  position: relative;
 }
 
-.bauhaus-title {
-  font-size: 3.5rem;
+.hero-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-full);
+  padding: 0.35rem 0.85rem;
+  width: fit-content;
+  margin-bottom: 1.25rem;
+}
+
+.pill-dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hyper-emerald);
+  box-shadow: 0 0 10px var(--hyper-emerald);
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.pill-text {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  letter-spacing: 0.08em;
+}
+
+.pill-tag {
+  background: rgba(6, 182, 212, 0.2);
+  color: var(--hyper-cyan);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+
+.hero-master-title {
+  font-size: 2.85rem;
   font-weight: 900;
-  line-height: 0.95;
-  letter-spacing: -0.04em;
-  text-transform: uppercase;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
   color: #ffffff;
-  margin: 0.5rem 0 1.25rem 0;
+  margin: 0 0 1.25rem 0;
 }
 
 @media (min-width: 768px) {
-  .bauhaus-title {
-    font-size: 5rem;
+  .hero-master-title {
+    font-size: 4rem;
   }
 }
 
-.bauhaus-title-blue {
-  background: linear-gradient(90deg, var(--bauhaus-blue), #60a5fa);
+.hero-gradient-text {
+  background: linear-gradient(135deg, #a5b4fc 0%, #38bdf8 50%, #34d399 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.bauhaus-subtitle {
-  font-size: 1.1rem;
+.hero-lead-text {
+  font-size: 1.05rem;
   color: var(--text-secondary);
-  max-width: 520px;
-  line-height: 1.6;
+  line-height: 1.65;
+  max-width: 580px;
+  margin-bottom: 2rem;
 }
 
-.pulse-ping {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background-color: #4ade80;
-  opacity: 0.75;
-  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-.pulse-dot {
-  position: relative;
-  width: 12px;
-  height: 12px;
-  border-radius: 9999px;
-  background-color: #22c55e;
-}
-
-@keyframes ping {
-  75%, 100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
-
-/* Right Pane: Art box + Split Buttons */
-.hero-right-pane {
-  border-left: 1px solid var(--border-subtle);
+.hero-cta-group {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
 }
 
-.bauhaus-art-box {
-  flex: 1;
-  background: rgba(10, 10, 24, 0.9);
-  min-height: 280px;
-  position: relative;
-  display: flex;
+.btn-hyper-primary {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-}
-
-.bauhaus-art-container {
-  position: relative;
-  width: 220px;
-  height: 220px;
-}
-
-.art-circle-blue {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: var(--bauhaus-blue);
-  mix-blend-mode: screen;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 25px rgba(0, 71, 255, 0.4));
-  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.art-triangle-red {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  width: 0;
-  height: 0;
-  border-left: 75px solid transparent;
-  border-right: 75px solid transparent;
-  border-bottom: 130px solid var(--bauhaus-red);
-  mix-blend-mode: screen;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 25px rgba(255, 46, 0, 0.4));
-  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.art-square-yellow {
-  position: absolute;
-  top: 35%;
-  left: 25%;
-  width: 85px;
-  height: 85px;
-  background: var(--bauhaus-yellow);
-  opacity: 0.85;
-  transform: rotate(15deg);
-  filter: drop-shadow(0 0 25px rgba(255, 215, 0, 0.4));
-  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bauhaus-art-box:hover .art-circle-blue {
-  transform: translate(-10px, -5px) scale(1.05);
-}
-
-.bauhaus-art-box:hover .art-triangle-red {
-  transform: translate(10px, 5px) scale(1.05);
-}
-
-.bauhaus-art-box:hover .art-square-yellow {
-  transform: rotate(35deg) scale(1.1);
-}
-
-/* Action Blocks Grid */
-.action-blocks-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  height: 200px;
-}
-
-.action-btn {
+  gap: 0.65rem;
+  background: linear-gradient(135deg, var(--hyper-indigo) 0%, var(--hyper-cyan) 100%);
+  color: #030712;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
+  box-shadow: 0 6px 25px rgba(6, 182, 212, 0.35);
+  transition: var(--transition-smooth);
+  width: fit-content;
+}
+
+.btn-hyper-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(6, 182, 212, 0.5);
+  filter: brightness(1.08);
+}
+
+.hero-spec-badges {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 0.75rem;
-  color: #ffffff;
+  flex-wrap: wrap;
+}
+
+.spec-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* =============================================================================
+   Telemetry & Memory Benchmark HUD
+   ============================================================================= */
+.hero-telemetry-hud {
+  padding: 1.75rem;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: rgba(11, 18, 33, 0.85);
   position: relative;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  padding: 1.5rem 1rem;
 }
 
-.send-btn {
-  background: var(--bauhaus-blue);
+.hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.send-btn:hover {
-  background: #1055ff;
+.hud-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.receive-btn {
-  background: var(--bauhaus-red);
-}
-
-.receive-btn:hover {
-  background: #ff4520;
-}
-
-.action-btn:hover .action-icon {
-  transform: translateY(-4px);
-}
-
-.action-icon {
-  transition: transform 0.25s ease;
-}
-
-.action-btn-title {
-  font-family: var(--font-heading);
-  font-size: 1.5rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.action-btn-sub {
+.hud-title {
   font-size: 0.75rem;
-  text-transform: uppercase;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #e2e8f0;
   letter-spacing: 0.08em;
-  opacity: 0.85;
 }
 
-/* Bauhaus Pillars (3 Columns) */
-.grid-bauhaus-pillars {
+.hud-live-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--hyper-emerald);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.hud-benchmark-box {
+  background: rgba(3, 7, 18, 0.6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.benchmark-row {
+  margin-bottom: 0.75rem;
+}
+
+.benchmark-row:last-child {
+  margin-bottom: 0;
+}
+
+.bench-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.bench-label {
+  color: var(--text-muted);
+}
+
+.bench-val {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.danger-case .bench-val {
+  color: #f87171;
+}
+
+.hyper-case .bench-val {
+  color: var(--hyper-cyan);
+}
+
+.bench-bar-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bench-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+}
+
+.danger-fill {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.hyper-fill {
+  background: linear-gradient(90deg, var(--hyper-indigo), var(--hyper-cyan));
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+}
+
+.hud-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.hud-stat-cell {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.stat-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon-wrap.cyan {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--hyper-cyan);
+}
+
+.stat-icon-wrap.indigo {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--hyper-indigo);
+}
+
+.stat-icon-wrap.emerald {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--hyper-emerald);
+}
+
+.stat-icon-wrap.violet {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--hyper-violet);
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #ffffff;
+}
+
+.hud-footer-ticker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.75rem;
+}
+
+/* =============================================================================
+   HyperX 4-Pillar Architecture Grid
+   ============================================================================= */
+.hyper-pillars-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 @media (min-width: 768px) {
-  .grid-bauhaus-pillars {
-    grid-template-columns: repeat(3, 1fr);
+  .hyper-pillars-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-.bauhaus-pillar-card {
-  padding: 2.25rem 2rem;
+@media (min-width: 1200px) {
+  .hyper-pillars-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.hyper-pillar-card {
+  padding: 1.75rem;
   display: flex;
   flex-direction: column;
-  position: relative;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+  border: 1px solid var(--border-subtle);
+  transition: var(--transition-smooth);
 }
 
-.bauhaus-pillar-card:hover {
+.hyper-pillar-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
   transform: translateY(-4px);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.15);
 }
 
-.pillar-circle-badge {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+.pillar-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
-  box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 0.15);
-  transition: all 0.2s ease;
 }
 
-.bauhaus-pillar-card:hover .pillar-circle-badge {
-  transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0px 0px rgba(255, 255, 255, 0.15);
-}
-
-.pillar-title {
-  font-size: 1.35rem;
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
+.pillar-heading {
+  font-size: 1.15rem;
+  font-weight: 800;
   color: #ffffff;
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 0.6rem 0;
+  letter-spacing: -0.015em;
 }
 
-.pillar-desc {
+.pillar-body {
+  font-size: 0.85rem;
   color: var(--text-secondary);
-  font-size: 0.95rem;
   line-height: 1.6;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   flex: 1;
 }
 
-.pillar-accent-line {
-  height: 3px;
-  width: 0;
-  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bauhaus-pillar-card:hover .pillar-accent-line {
-  width: 100%;
-}
-
-/* Tri-Color Ribbon */
-.tri-color-ribbon {
+.pillar-footer {
   display: flex;
-  height: 4px;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.85rem;
+}
+
+.pillar-tech-label {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--hyper-cyan);
+}
+
+.pillar-arrow {
+  color: var(--text-muted);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.hyper-pillar-card:hover .pillar-arrow {
+  color: var(--hyper-cyan);
+  transform: translate(2px, -2px);
+}
+
+/* =============================================================================
+   Holographic Stream Beam (Footer)
+   ============================================================================= */
+.hyperx-footer-beam {
+  height: 2px;
   width: 100%;
-}
-
-.ribbon-blue {
-  flex: 1;
-  background: var(--bauhaus-blue);
-}
-
-.ribbon-red {
-  flex: 1;
-  background: var(--bauhaus-red);
-}
-
-.ribbon-yellow {
-  flex: 1;
-  background: var(--bauhaus-yellow);
+  background: linear-gradient(90deg, transparent 0%, var(--hyper-indigo) 25%, var(--hyper-cyan) 50%, var(--hyper-emerald) 75%, transparent 100%);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
 }
 
 @media (max-width: 768px) {
-  .hero-title {
-    font-size: 2.35rem;
-  }
-  .navbar {
-    padding: 1rem;
+  .hidden-mobile {
+    display: none !important;
   }
 }
+
 
 

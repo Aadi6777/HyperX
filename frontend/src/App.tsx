@@ -18,7 +18,7 @@ import {
   PeerInfo,
   ChatMessage
 } from './services/webrtcEngine';
-import { UserCircle, LogIn, LogOut, Terminal, Link } from 'lucide-react';
+import { UserCircle, LogIn, LogOut, Terminal } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -54,10 +54,10 @@ export const App: React.FC = () => {
       // Fallback workspace for offline/standalone mode
       const fallback: Workspace = {
         id: 'ws_local_demo',
-        name: 'HyperX Core Mesh',
-        slug: 'core-mesh',
+        name: 'HyperX Primary Cluster',
+        slug: 'primary-cluster',
         ownerId: 'peer_local',
-        ownerName: 'HyperX Peer',
+        ownerName: 'HyperX Operator',
         currentUserRole: 'OWNER',
         memberCount: 2,
         createdAt: new Date().toISOString(),
@@ -95,7 +95,7 @@ export const App: React.FC = () => {
       });
 
     // Initialize WebRTC Engine
-    const peerName = currentUser?.fullName || 'Peer ' + Math.random().toString(36).substring(2, 6);
+    const peerName = currentUser?.fullName || 'Peer_' + Math.random().toString(36).substring(2, 6);
     const engine = new WebRtcEngine(peerName);
     webrtcEngineRef.current = engine;
 
@@ -128,7 +128,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const scrollToTransferCenter = () => {
+  const scrollToTransfer = () => {
     transferCenterRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -137,41 +137,36 @@ export const App: React.FC = () => {
       {/* Top Navbar */}
       <nav className="navbar" role="navigation" aria-label="Main Navigation">
         <div className="brand-container">
-          {/* Bauhaus Yellow Square Icon */}
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              background: 'var(--bauhaus-yellow)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#000',
-              fontWeight: 900,
-              borderRadius: '2px',
-            }}
-          >
-            <Link size={18} strokeWidth={3} />
+          {/* HyperX Signature Emblem */}
+          <div className="hyperx-logo-badge">
+            <span className="logo-letter-h">H</span>
+            <span className="logo-letter-x">X</span>
           </div>
-          <span className="brand-text" style={{ letterSpacing: '0.05em' }}>HYPERX</span>
-          <span className="badge-tag" style={{ border: '1px solid rgba(255,255,255,0.15)', fontSize: '0.7rem' }}>
-            P2P PROTOCOL
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* Status Indicator */}
-          <div className="badge-tag" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem' }}>
-            <div className="pulse-dot" style={{ width: '8px', height: '8px' }} />
-            <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
-              {signalingStatus === 'CONNECTED' ? 'ONLINE // ap-south-1' : signalingStatus}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="brand-text">HYPERX</span>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>
+              DISTRIBUTED P2P PIPELINE
             </span>
           </div>
+        </div>
 
+        {/* Center Live Mesh Telemetry Pill */}
+        <div className="nav-telemetry-badge hidden-mobile">
+          <span className="pill-dot-pulse" />
+          <span style={{ color: 'var(--text-secondary)' }}>
+            STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--hyper-emerald)' : 'var(--hyper-amber)' }}>{signalingStatus}</strong>
+          </span>
+          <span className="telemetry-separator">|</span>
+          <span style={{ color: 'var(--text-muted)' }}>REGION: <strong>ap-south-1</strong></span>
+          <span className="telemetry-separator">|</span>
+          <span style={{ color: 'var(--text-muted)' }}>CIPHER: <strong>AES-256</strong></span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {currentUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
-                <UserCircle size={18} color="var(--bauhaus-yellow)" />
+                <UserCircle size={18} color="var(--hyper-cyan)" />
                 <span style={{ fontWeight: 600 }}>{currentUser.fullName}</span>
                 <span className="badge-tag" style={{ fontSize: '0.65rem' }}>{currentUser.role}</span>
               </div>
@@ -183,25 +178,10 @@ export const App: React.FC = () => {
           ) : (
             <button
               type="button"
-              style={{
-                background: 'var(--bauhaus-yellow)',
-                color: '#000',
-                fontWeight: 800,
-                fontSize: '0.85rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                padding: '0.5rem 1.25rem',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: '2px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                transition: 'all 0.2s ease',
-              }}
+              className="btn-hyper-nav"
               onClick={() => setShowAuthModal(true)}
             >
-              <LogIn size={15} strokeWidth={2.5} />
+              <LogIn size={15} />
               <span>Peer Sign-In</span>
             </button>
           )}
@@ -225,13 +205,10 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="app-container" style={{ flex: 1 }}>
-        {/* Bauhaus Split Hero with Geometric Animation and Action Blocks */}
-        <HeroSection
-          onSelectSend={scrollToTransferCenter}
-          onSelectReceive={scrollToTransferCenter}
-        />
+        {/* Bespoke Holographic Hero Section */}
+        <HeroSection onSelectSend={scrollToTransfer} />
 
-        {/* Workspace Boundary Switcher (Phase 3) */}
+        {/* Workspace Boundary Management */}
         {workspaces.length > 0 && (
           <WorkspaceBar
             workspaces={workspaces}
@@ -243,81 +220,81 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Phase 5, 6, 7, 8: Zero-RAM Chunk Engine, Local IndexedDB Cache, Resumable Bitmask, AES-256-GCM */}
+        {/* Zero-RAM Transfer Studio */}
         <div ref={transferCenterRef}>
           <TransferCenter workspaceId={activeWorkspace?.id} />
         </div>
 
-        {/* Bauhaus 3-Pillar Architectural Foundations */}
+        {/* Bespoke 4-Pillar Architectural Matrix */}
         <ArchitecturePillars />
 
-        {/* Phase 9: Real-time Peer Collaboration & Phase 3 Audit Logs */}
+        {/* Real-time Collaboration & Audit Trail */}
         <CollaborationPanel
           workspace={activeWorkspace}
-          currentUserEmail={currentUser?.email || 'guest@hyperx.io'}
+          currentUserEmail={currentUser?.email || 'operator@hyperx.io'}
           peers={peers}
           chatMessages={chatMessages}
           onSendChatMessage={handleSendChat}
         />
 
-        {/* Phase 1: Real-time Diagnostics & Capability Probes */}
+        {/* Live Hardware Capability Diagnostics */}
         <DiagnosticCard />
 
-        {/* Verification Guide */}
+        {/* Production Stack Guide */}
         <section className="glass-panel card-content" style={{ marginTop: '2.5rem' }}>
           <div className="card-header">
-            <div className="icon-box" style={{ background: 'var(--bauhaus-blue)', color: '#fff' }}>
-              <Terminal size={22} />
+            <div className="icon-box cyan">
+              <Terminal size={20} />
             </div>
-            <span className="badge-tag">Production Stack // Supabase</span>
+            <span className="badge-tag">Production Verified &bull; Supabase</span>
           </div>
 
-          <h3 className="card-title">Production Infrastructure Architecture</h3>
+          <h3 className="card-title">HyperX Infrastructure Runtime</h3>
           <p className="card-desc">
             Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
           </p>
 
           <pre style={{
-            background: 'rgba(0, 0, 0, 0.5)',
+            background: 'rgba(0, 0, 0, 0.45)',
             padding: '1rem 1.25rem',
             borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border-subtle)',
             overflowX: 'auto',
             fontSize: '0.85rem',
-            color: '#60a5fa',
+            color: '#38bdf8',
             fontFamily: 'var(--font-mono)'
           }}>
-{`# 1. Connect HyperX Backend to Supabase
+{`# 1. Start Spring Boot Backend Connected to Supabase
 ./run-supabase.sh
 
-# 2. Expose Local Backend via Secure Tunnel for Vercel
+# 2. Expose Port 8080 with Secure Cloudflare Tunnel
 cloudflared tunnel --url http://localhost:8080
 
-# 3. Deploy Frontend on Vercel
-Set VITE_API_BASE_URL in Vercel Settings -> Redeploy`}
+# 3. Connect Live Vercel Frontend
+Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
           </pre>
         </section>
       </main>
 
-      {/* Tri-Color Ribbon & Minimalist Bauhaus Footer */}
+      {/* Holographic Footer Beam & Brand Footer */}
       <footer style={{ marginTop: 'auto', width: '100%' }}>
-        <div className="tri-color-ribbon">
-          <div className="ribbon-blue" />
-          <div className="ribbon-red" />
-          <div className="ribbon-yellow" />
-        </div>
-        <div style={{ background: 'rgba(5, 5, 17, 0.95)', borderTop: '1px solid var(--border-subtle)', padding: '1.5rem 2rem' }}>
+        <div className="hyperx-footer-beam" />
+        <div style={{ background: 'rgba(3, 7, 18, 0.95)', borderTop: '1px solid var(--border-subtle)', padding: '1.5rem 2rem' }}>
           <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', fontSize: '1.1rem', color: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div className="hyperx-logo-badge" style={{ width: '28px', height: '28px', fontSize: '0.75rem' }}>
+                <span className="logo-letter-h">H</span>
+                <span className="logo-letter-x">X</span>
+              </div>
+              <span style={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: '1rem', color: '#fff' }}>
                 HYPERX
               </span>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>&bull; Zero-RAM P2P Streaming Engine</span>
             </div>
 
             <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.15em' }}>
-                E2E ENCRYPTED P2P TRANSFER // 256-BIT AES
+              <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em' }}>
+                AES-256-GCM // WEB STREAMS // INDEXEDDB
               </div>
               <div style={{ fontSize: '0.65rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
                 v2.0.0 &bull; Supabase PostgreSQL
@@ -327,7 +304,7 @@ Set VITE_API_BASE_URL in Vercel Settings -> Redeploy`}
         </div>
       </footer>
 
-      {/* Auth Modal (Phase 2) */}
+      {/* Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
