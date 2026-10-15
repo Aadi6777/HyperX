@@ -22,7 +22,7 @@ On top of that, traditional cloud storage services require uploading massive mul
 We build HyperX step-by-step across 10 disciplined phases to ensure every layer is resilient, battle-tested, and interview-ready:
 
 ```
-[Phase 1]  🟢 Foundation & Setup        (Spring Boot 3.3, React 18 + TS, PostgreSQL, Flyway V1)
+[Phase 1]  🟢 Foundation & Setup        (Python 3.11+ / FastAPI, React 18 + TS, PostgreSQL / SQLite)
 [Phase 2]  🟢 Auth & Identity           (JWT, BCrypt, Stateless Security, RBAC)
 [Phase 3]  🟢 Workspace Boundaries      (Multi-tenant isolation, roles, activity audit logs)
 [Phase 4]  🟢 WebRTC Signaling Engine   (STUN/TURN, SDP offer/answer exchange via WebSockets)
@@ -31,7 +31,7 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
 [Phase 7]  🟢 Resumable Transfers       (Bitmask recovery, network reconnection handling)
 [Phase 8]  🟢 End-to-End Encryption     (Client-side AES-256-GCM + SHA-256 verification)
 [Phase 9]  🟢 Peer Collaboration        (Real-time chat, notifications, file annotations)
-[Phase 10] 🟢 Production Deployment    (Vercel frontend, Dockerized backend, CI/CD)
+[Phase 10] 🟢 Production Deployment    (Vercel frontend, Dockerized Python backend, CI/CD)
 ```
 
 ---
@@ -60,13 +60,13 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
              Exchange │                 │ Exchange
                       ▼                 ▼
              ┌───────────────────────────────────┐
-             │    Spring Boot Signaling Server   │
+             │    Python FastAPI Signaling Server│
              │   (WebSocket / JWT / Workspaces)  │
              └─────────────────┬─────────────────┘
                                │
                                ▼
-                       PostgreSQL 16
-                   (Flyway Schema State)
+                        PostgreSQL 16
+                   (Asyncpg / SQLAlchemy)
 ```
 
 ---
@@ -75,8 +75,8 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
 
 - **Frontend**: React 18, TypeScript, Vite, Vanilla CSS (cyber/glassmorphic theme).
 - **Client Storage & Streaming**: WebRTC DataChannels, Streams API, IndexedDB, Web Crypto API.
-- **Backend**: Java 21, Spring Boot 3.3, Spring Security, Spring WebSocket.
-- **Database & Migrations**: PostgreSQL 16 managed strictly through versioned Flyway scripts (`V1__init.sql`).
+- **Backend**: Python 3.11+, FastAPI, Uvicorn, SQLAlchemy (asyncio), Asyncpg, WebSockets.
+- **Database & Persistence**: PostgreSQL 16 (production/cloud) & SQLite (resilient local fallback).
 - **Orchestration & Deploy**: Docker Compose, Vercel edge deployment ready.
 
 ---
@@ -89,17 +89,18 @@ git clone https://github.com/Aadi6777/HyperX.git
 cd HyperX
 ```
 
-#### 2. Start PostgreSQL via Docker
+#### 2. Start PostgreSQL via Docker (Optional, SQLite fallback is built-in)
 ```bash
 docker compose up -d postgres
 ```
 
-#### 3. Run the Spring Boot Backend
+#### 3. Run the Python FastAPI Backend
 ```bash
 cd backend
-./mvnw spring-boot:run
+pip install -r requirements.txt
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
-*The backend runs on `http://localhost:8080`. Flyway automatically runs database migrations on startup.*
+*The backend runs on `http://localhost:8080` with auto-provisioned tables and health telemetry.*
 
 #### 4. Run the React Frontend
 ```bash
@@ -125,7 +126,7 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
 ### Current Status: All 10 Phases Complete 🚀
 
 - [x] **Phase 1: Project Setup & Baseline**
-  - Database schema & Flyway migrations for `users`, `workspaces`, `members`
+  - Database schema & migrations for `users`, `workspaces`, `members`
   - Health diagnostic API (`/api/v1/health`)
   - Stateless security & CORS configuration
   - React + Vite dashboard with live hardware and browser capability probes
@@ -136,7 +137,7 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
   - Workspace creation with slug isolation, member roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`)
   - Real-time audit trail and file transfer logging (`activity_logs`, `transfer_records`)
 - [x] **Phase 4: WebRTC Signaling Engine**
-  - Spring WebSocket signaling handler (`/ws/signaling`)
+  - Python WebSocket signaling handler (`/ws/signaling`)
   - STUN/TURN integration, SDP offer/answer exchanges, and ICE candidate negotiation
 - [x] **Phase 5: Zero-RAM Chunk Engine**
   - Dynamic chunking (512KB slices) with Web Streams API
@@ -154,6 +155,6 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
   - Real-time workspace chat with live online peer presence
   - Chunk heatmap visualizer and audit trail viewer
 - [x] **Phase 10: Production Deployment**
-  - Multi-stage Dockerfile for Spring Boot Backend & React Frontend (Nginx SPA)
+  - Lightweight Dockerfile for Python Backend & React Frontend (Nginx SPA)
   - Full Docker Compose orchestration and Vercel edge deployment configuration
 

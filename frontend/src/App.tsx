@@ -291,7 +291,7 @@ export const App: React.FC = () => {
 
           <h3 className="card-title">HyperX Infrastructure Runtime</h3>
           <p className="card-desc">
-            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Python FastAPI signaling server coordinates STUN ICE negotiation and persists audit state into your PostgreSQL / Supabase cluster.
           </p>
 
           <pre style={{
@@ -304,7 +304,7 @@ export const App: React.FC = () => {
             color: '#38bdf8',
             fontFamily: 'var(--font-mono)'
           }}>
-{`# 1. Start Spring Boot Backend Connected to Supabase
+{`# 1. Start Python FastAPI Backend Connected to Supabase
 ./run-supabase.sh
 
 # 2. Expose Port 8080 with Secure Cloudflare Tunnel

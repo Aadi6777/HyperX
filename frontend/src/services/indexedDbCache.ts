@@ -114,12 +114,14 @@ export async function getChunk(fileId: string, chunkIndex: number): Promise<Arra
  * Streams slices sequentially from IndexedDB directly to disk without loading into V8 memory.
  * Supported in Chromium/Edge/Desktop browsers.
  */
+export type SaveFileResult = 'SAVED' | 'ABORTED' | 'UNSUPPORTED';
+
 export async function streamSaveFileToDisk(
   fileId: string,
   totalChunks: number,
   suggestedName: string,
   onProgress?: (savedChunks: number, total: number) => void
-): Promise<boolean> {
+): Promise<SaveFileResult> {
   // Check if File System Access API is supported
   const win = window as unknown as { showSaveFilePicker?: (options: { suggestedName: string }) => Promise<{ createWritable: () => Promise<{ write: (data: ArrayBuffer) => Promise<void>; close: () => Promise<void> }> }> };
 
@@ -140,17 +142,17 @@ export async function streamSaveFileToDisk(
       }
 
       await writable.close();
-      return true;
+      return 'SAVED';
     } catch (err: unknown) {
       if ((err as Error).name === 'AbortError') {
-        // User cancelled file picker
-        return false;
+        // User explicitly cancelled file picker dialog
+        return 'ABORTED';
       }
       console.warn('File System Access API error, falling back to Blob download:', err);
     }
   }
 
-  return false;
+  return 'UNSUPPORTED';
 }
 
 /**

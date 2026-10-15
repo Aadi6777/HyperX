@@ -30,7 +30,8 @@ import {
   saveChunk,
   saveTransferMetadata,
   streamSaveFileToDisk,
-  assembleCompleteFile
+  assembleCompleteFile,
+  getChunk
 } from '../services/indexedDbCache';
 import { recordTransfer } from '../services/workspaceService';
 import {
@@ -77,6 +78,9 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [receiveCodeInput, setReceiveCodeInput] = useState('');
+  const [receivePassphraseInput, setReceivePassphraseInput] = useState('');
+  const [showReceivePassphrase, setShowReceivePassphrase] = useState(false);
+  const [unlockPassphrases, setUnlockPassphrases] = useState<Record<string, string>>({});
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [receiveLoading, setReceiveLoading] = useState(false);
@@ -94,6 +98,9 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
 
   // In-memory chunk hashes for receiver integrity validation
   const receivedChunkHashesRef = useRef<Map<string, string[]>>(new Map());
+
+  // In-memory speed calculation metrics for receiver
+  const receiverStatsRef = useRef<Map<string, { startTime: number; bytesReceived: number }>>(new Map());
 
   // Ref to always access latest transfers inside WebRTC event callbacks without stale closures
   const transfersRef = useRef<LocalTransfer[]>([]);
@@ -129,18 +136,29 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
 
   // Handle incoming chunks directly from target sender
   const handleIncomingChunk = useCallback(async (payload: IncomingChunkPayload) => {
-    const { fileId, chunkIndex, totalChunks, isEncrypted, iv, data, senderPeerId } = payload;
+    const { fileId, transferId, chunkIndex, totalChunks, isEncrypted, iv, data, senderPeerId } = payload;
 
+    const currentTransfer = transfersRef.current.find(
+      (t) => t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase())
+    );
+
+    const effectivePassphrase = currentTransfer?.passphrase || passphrase;
     let plainBuffer = data;
+
     if (isEncrypted && iv) {
-      if (!passphrase) {
+      if (!effectivePassphrase) {
+        // Save encrypted slice to IndexedDB so it is not dropped
+        await saveChunk(fileId, chunkIndex, data);
         setTransfers((prev) =>
           prev.map((t) =>
-            t.fileId === fileId
+            (t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase()))
               ? {
                   ...t,
-                  status: 'ERROR',
-                  errorMessage: 'File is encrypted. Please enter the encryption passphrase.',
+                  fileId,
+                  totalChunks,
+                  isEncrypted: true,
+                  status: 'PAUSED',
+                  errorMessage: 'Encrypted transfer: Enter passphrase below to decrypt slices.',
                 }
               : t
           )
@@ -149,13 +167,13 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       }
 
       try {
-        const key = await deriveKeyFromSecret(passphrase);
+        const key = await deriveKeyFromSecret(effectivePassphrase);
         plainBuffer = await decryptChunk(data, iv, key);
       } catch (err) {
         console.error(`Decryption failed on chunk #${chunkIndex}:`, err);
         setTransfers((prev) =>
           prev.map((t) =>
-            t.fileId === fileId
+            (t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase()))
               ? {
                   ...t,
                   status: 'ERROR',
@@ -174,34 +192,50 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     // Compute chunk hash for progressive manifest integrity
     const chunkHash = await computeSha256(plainBuffer);
     let hashes = receivedChunkHashesRef.current.get(fileId);
-    if (!hashes) {
+    if (!hashes || hashes.length !== totalChunks) {
       hashes = new Array(totalChunks).fill('');
       receivedChunkHashesRef.current.set(fileId, hashes);
     }
     hashes[chunkIndex] = chunkHash;
 
+    // Live receiver speed calculation
+    let stats = receiverStatsRef.current.get(fileId);
+    if (!stats) {
+      stats = { startTime: Date.now(), bytesReceived: 0 };
+      receiverStatsRef.current.set(fileId, stats);
+    }
+    stats.bytesReceived += plainBuffer.byteLength;
+    const elapsedSec = (Date.now() - stats.startTime) / 1000;
+    const speedMBps = elapsedSec > 0 ? parseFloat(((stats.bytesReceived / (1024 * 1024)) / elapsedSec).toFixed(2)) : 0;
+
     setTransfers((prev) =>
       prev.map((t) => {
-        if (t.fileId === fileId) {
-          const newMap = [...t.chunksMap];
-          newMap[chunkIndex] = true;
-          const completed = newMap.filter(Boolean).length;
+        const isMatch = t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase());
+        if (isMatch) {
+          const baseMap = t.chunksMap.length === totalChunks ? [...t.chunksMap] : new Array(totalChunks).fill(false);
+          baseMap[chunkIndex] = true;
+          const completed = baseMap.filter(Boolean).length;
           const pct = Math.round((completed / totalChunks) * 100);
           const isDone = completed >= totalChunks;
 
-          if (isDone) {
-            // Verify final manifest root integrity
-            validateReceivedIntegrity(t, hashes!);
-          }
-
-          return {
+          const updated: LocalTransfer = {
             ...t,
+            fileId, // Adopt confirmed fileId if it was pending_
+            totalChunks,
             chunksCompleted: completed,
             percentage: pct,
-            chunksMap: newMap,
+            speedMBps,
+            chunksMap: baseMap,
             targetPeerId: senderPeerId,
             status: isDone ? 'COMPLETED' : 'STREAMING',
+            errorMessage: undefined,
           };
+
+          if (isDone) {
+            validateReceivedIntegrity(updated, hashes!);
+          }
+
+          return updated;
         }
         return t;
       })
@@ -211,7 +245,23 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   // Full File Manifest Root Integrity Check
   const validateReceivedIntegrity = async (transfer: LocalTransfer, hashes: string[]) => {
     try {
-      const computedRoot = await computeManifestRootHash(hashes);
+      let finalHashes = hashes;
+      // If any hash slot is empty, load chunk buffers from IndexedDB to ensure 100% accurate integrity verification
+      if (!finalHashes || finalHashes.length !== transfer.totalChunks || finalHashes.some((h) => !h)) {
+        const recoveredHashes: string[] = [];
+        for (let idx = 0; idx < transfer.totalChunks; idx++) {
+          const chunkBuf = await getChunk(transfer.fileId, idx);
+          if (!chunkBuf) {
+            console.warn(`Chunk #${idx} not yet stored during final verification`);
+            return;
+          }
+          recoveredHashes.push(await computeSha256(chunkBuf));
+        }
+        finalHashes = recoveredHashes;
+        receivedChunkHashesRef.current.set(transfer.fileId, recoveredHashes);
+      }
+
+      const computedRoot = await computeManifestRootHash(finalHashes);
       if (transfer.manifestHash && transfer.manifestHash !== computedRoot) {
         console.error('Integrity Mismatch!', { expected: transfer.manifestHash, computed: computedRoot });
         setTransfers((prev) =>
@@ -306,22 +356,32 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       onTransferAccepted: (acc) => {
         const { transferId, senderPeerId, manifest } = acc;
         setTransfers((prev) => {
+          const existing = prev.find(
+            (t) => t.transferId.toUpperCase() === transferId.toUpperCase() || t.fileId === manifest.fileId
+          );
           const filtered = prev.filter(
             (t) => t.transferId.toUpperCase() !== transferId.toUpperCase() && t.fileId !== manifest.fileId
           );
+          // Preserve any chunks already completed before manifest arrival or passphrase already provided
+          const existingMap = existing?.chunksMap && existing.chunksMap.length === manifest.totalChunks
+            ? existing.chunksMap
+            : new Array(manifest.totalChunks).fill(false);
+          const completedCount = existingMap.filter(Boolean).length;
+
           const incoming: LocalTransfer = {
             fileId: manifest.fileId,
             transferId,
             fileName: manifest.fileName,
             fileSize: manifest.fileSize,
             totalChunks: manifest.totalChunks,
-            chunksCompleted: 0,
-            percentage: 0,
-            speedMBps: 0,
-            status: 'STREAMING',
+            chunksCompleted: completedCount,
+            percentage: Math.round((completedCount / manifest.totalChunks) * 100),
+            speedMBps: existing?.speedMBps || 0,
+            status: completedCount >= manifest.totalChunks ? 'COMPLETED' : 'STREAMING',
             isEncrypted: manifest.isEncrypted,
+            passphrase: existing?.passphrase || passphrase || undefined,
             manifestHash: manifest.manifestHash,
-            chunksMap: new Array(manifest.totalChunks).fill(false),
+            chunksMap: existingMap,
             direction: 'RECEIVE',
             targetPeerId: senderPeerId,
             targetPeerName: manifest.senderName || 'Peer',
@@ -519,6 +579,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           {
             type: 'CHUNK',
             fileId,
+            transferId: transfer.transferId,
             chunkIndex: idx,
             totalChunks,
             isEncrypted: !!key,
@@ -597,6 +658,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     setReceiveLoading(true);
     setReceiveError(null);
 
+    const targetPass = receivePassphraseInput.trim() || undefined;
+
     // 1. Immediately create a visible pending transfer card so the receiver sees immediate feedback!
     setTransfers((prev) => {
       if (prev.some((t) => t.transferId.toUpperCase() === code)) {
@@ -612,7 +675,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         percentage: 0,
         speedMBps: 0,
         status: 'PENDING_PEER',
-        isEncrypted: false,
+        isEncrypted: Boolean(targetPass),
+        passphrase: targetPass,
         chunksMap: [],
         direction: 'RECEIVE',
       };
@@ -626,6 +690,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       setReceiveLoading(false);
       setShowReceiveModal(false);
       setReceiveCodeInput('');
+      setReceivePassphraseInput('');
     }, 400);
   };
 
@@ -655,15 +720,15 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   // Constant-Memory File Download (O(1) RAM using File System Access API)
   const downloadFile = async (transfer: LocalTransfer) => {
     // 1. First attempt direct disk stream (Constant O(1) RAM)
-    const success = await streamSaveFileToDisk(
+    const result = await streamSaveFileToDisk(
       transfer.fileId,
       transfer.totalChunks,
       transfer.fileName
     );
 
-    if (success) return;
+    if (result === 'SAVED' || result === 'ABORTED') return;
 
-    // 2. Fallback to Blob assembly with memory guard
+    // 2. Fallback to Blob assembly with memory guard if File System Access API is unsupported
     if (transfer.fileSize > 1.5 * 1024 * 1024 * 1024) {
       alert(
         'Warning: This browser does not support the File System Access API for constant-memory disk writing. Downloading files > 1.5GB as in-memory Blobs may cause tab memory exhaustion.'
@@ -673,7 +738,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     let blob = transfer.downloadBlob;
     if (!blob) {
       try {
-        blob = await assembleCompleteFile(transfer.fileId, transfer.totalChunks);
+        const mimeType = transfer.file?.type || 'application/octet-stream';
+        blob = await assembleCompleteFile(transfer.fileId, transfer.totalChunks, mimeType);
       } catch (err) {
         console.error('Assembly failed:', err);
         alert('Could not assemble file chunks from IndexedDB.');
@@ -860,10 +926,45 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                 fontFamily: 'var(--font-mono)',
                 fontSize: '1rem',
                 textTransform: 'uppercase',
-                marginBottom: '1.25rem',
+                marginBottom: '1rem',
                 outline: 'none',
               }}
             />
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                <Lock size={12} style={{ color: 'var(--accent-green)' }} />
+                <span>Decryption Passphrase (Optional, if sender encrypted the file):</span>
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input
+                  type={showReceivePassphrase ? 'text' : 'password'}
+                  value={receivePassphraseInput}
+                  onChange={(e) => setReceivePassphraseInput(e.target.value)}
+                  placeholder="e.g. Secret Key"
+                  style={{
+                    flex: 1,
+                    padding: '0.65rem 0.85rem',
+                    background: 'rgba(0,0,0,0.5)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '4px',
+                    color: 'var(--bauhaus-yellow)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.88rem',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setShowReceivePassphrase(!showReceivePassphrase)}
+                  style={{ padding: '0.65rem' }}
+                  title={showReceivePassphrase ? 'Hide key' : 'Show key'}
+                >
+                  {showReceivePassphrase ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
             {receiveError && (
               <div style={{ color: 'var(--bauhaus-red)', fontSize: '0.8rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255, 46, 0, 0.1)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255, 46, 0, 0.3)' }}>
                 <AlertTriangle size={15} />
@@ -1001,6 +1102,47 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--bauhaus-red)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
                         <AlertTriangle size={14} />
                         <span>{t.errorMessage}</span>
+                      </div>
+                    )}
+
+                    {t.direction === 'RECEIVE' && t.isEncrypted && !t.passphrase && t.status !== 'COMPLETED' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', background: 'rgba(255, 215, 0, 0.08)', padding: '0.45rem 0.65rem', borderRadius: '4px', border: '1px solid rgba(255, 215, 0, 0.25)', flexWrap: 'wrap' }}>
+                        <KeyRound size={14} style={{ color: 'var(--bauhaus-yellow)' }} />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--bauhaus-yellow)', fontWeight: 600 }}>Decryption Key Required:</span>
+                        <input
+                          type="password"
+                          placeholder="Enter passphrase..."
+                          value={unlockPassphrases[t.fileId] || ''}
+                          onChange={(e) => setUnlockPassphrases({ ...unlockPassphrases, [t.fileId]: e.target.value })}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            background: 'rgba(0,0,0,0.5)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '4px',
+                            color: '#fff',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.75rem',
+                            outline: 'none',
+                            width: '160px',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn-hyper-nav"
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem', background: 'var(--bauhaus-blue)' }}
+                          onClick={() => {
+                            const pass = unlockPassphrases[t.fileId]?.trim();
+                            if (pass) {
+                              setTransfers((prev) =>
+                                prev.map((item) =>
+                                  item.fileId === t.fileId ? { ...item, passphrase: pass, errorMessage: undefined, status: 'STREAMING' } : item
+                                )
+                              );
+                            }
+                          }}
+                        >
+                          Unlock
+                        </button>
                       </div>
                     )}
                   </div>

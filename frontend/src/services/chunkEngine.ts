@@ -7,13 +7,14 @@
 import { encryptChunk, decryptChunk } from './cryptoService';
 import { saveChunk } from './indexedDbCache';
 
-export const CHUNK_SIZE = 512 * 1024; // 512 KB per chunk
+export const CHUNK_SIZE = 64 * 1024; // 64 KB per chunk (universal WebRTC SCTP DataChannel compatibility)
 export const HIGH_WATERMARK = 1024 * 1024; // 1 MB backpressure limit
 export const LOW_WATERMARK = 256 * 1024; // 256 KB resume threshold
 
 export interface ChunkHeader {
   type: 'CHUNK';
   fileId: string;
+  transferId?: string;
   chunkIndex: number;
   totalChunks: number;
   isEncrypted: boolean;
@@ -57,13 +58,14 @@ export function waitForBufferDrain(channel: RTCDataChannel): Promise<void> {
 export async function streamFileToPeer(params: {
   file: File;
   fileId: string;
+  transferId?: string;
   channel: RTCDataChannel;
   encryptionKey?: CryptoKey | null;
   acknowledgedChunks?: Set<number>;
   signalState: { isPaused: boolean; isCancelled: boolean };
   onProgress: (progress: TransferProgress) => void;
 }): Promise<void> {
-  const { file, fileId, channel, encryptionKey, acknowledgedChunks, signalState, onProgress } = params;
+  const { file, fileId, transferId, channel, encryptionKey, acknowledgedChunks, signalState, onProgress } = params;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const chunksMap = new Array<boolean>(totalChunks).fill(false);
 
@@ -115,6 +117,7 @@ export async function streamFileToPeer(params: {
     const header: ChunkHeader = {
       type: 'CHUNK',
       fileId,
+      transferId,
       chunkIndex,
       totalChunks,
       isEncrypted,

@@ -1,31 +1,35 @@
-# Multi-stage production build for HyperX Spring Boot Backend
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# Multi-stage/lightweight production Dockerfile for HyperX Python / FastAPI Backend
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy maven wrapper and pom.xml
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Copy source code and build production jar
-COPY src/ src/
-RUN ./mvnw clean package -DskipTests
+# Install system dependencies & curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Minimal runtime image
-FROM eclipse-temurin:21-jre-alpine
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-WORKDIR /app
+# Create non-root user
+RUN groupadd -r hyperx && useradd -r -g hyperx hyperx
 
-# Install curl for docker healthcheck
-RUN apk add --no-cache curl
+# Copy application source code
+COPY app/ app/
 
-# Non-root security user
-RUN addgroup -S hyperx && adduser -S hyperx -G hyperx
+# Grant appropriate permissions
+RUN chown -R hyperx:hyperx /app
+
 USER hyperx
-
-COPY --from=builder /app/target/backend-1.0.0.jar app.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=5s \
+    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

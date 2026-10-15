@@ -33,6 +33,7 @@ export interface FileManifest {
 
 export interface IncomingChunkPayload {
   fileId: string;
+  transferId?: string;
   chunkIndex: number;
   totalChunks: number;
   isEncrypted: boolean;
@@ -221,8 +222,21 @@ export class WebRtcEngine {
       return existing;
     }
 
-    if (!this.peerConnections.has(targetPeerId)) {
+    const pc = this.peerConnections.get(targetPeerId);
+    if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
       await this.initiateCall(targetPeerId);
+    } else if (!this.dataChannels.has(targetPeerId) || this.dataChannels.get(targetPeerId)?.readyState === 'closed') {
+      const channel = pc.createDataChannel('hyperx-channel', { ordered: true });
+      this.setupDataChannel(targetPeerId, channel);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      this.sendWs({
+        type: 'offer',
+        workspaceId: this.currentWorkspaceId,
+        targetPeerId,
+        senderPeerId: this.peerId,
+        sdp: offer,
+      });
     }
 
     const start = Date.now();
@@ -447,6 +461,7 @@ export class WebRtcEngine {
         if (header) {
           this.callbacks.onChunkReceived?.({
             fileId: header.fileId,
+            transferId: header.transferId,
             chunkIndex: header.chunkIndex,
             totalChunks: header.totalChunks,
             isEncrypted: header.isEncrypted,

@@ -42,7 +42,7 @@ export const DiagnosticCard: React.FC = () => {
 
         <h2 className="card-title">Backend Control Plane</h2>
         <p className="card-desc">
-          Spring Boot 3.3 signaling node providing authentication, workspace boundaries, and session telemetry.
+          Python 3.11+ / FastAPI signaling node providing authentication, workspace boundaries, and session telemetry.
         </p>
 
         <div style={{ margin: '1.25rem 0' }}>
