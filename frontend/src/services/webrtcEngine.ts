@@ -3,7 +3,7 @@
  * Point-to-point chunk delivery, active backpressure control, bitmask negotiation, and JWT authentication.
  */
 
-import { getStoredToken } from './authService';
+import { getStoredToken, getApiBase } from './authService';
 import { ChunkHeader, HIGH_WATERMARK, waitForBufferDrain } from './chunkEngine';
 
 export interface PeerInfo {
@@ -57,12 +57,15 @@ export type WebRtcEventCallback = {
 
 export class WebRtcEngine {
   private ws: WebSocket | null = null;
+  private bc: BroadcastChannel | null = null;
   private peerConnections = new Map<string, RTCPeerConnection>();
   private dataChannels = new Map<string, RTCDataChannel>();
   private callbacks: WebRtcEventCallback = {};
   private pendingHeaders = new Map<string, ChunkHeader>();
   private knownPeers = new Map<string, PeerInfo>();
   private iceCandidateQueues = new Map<string, RTCIceCandidateInit[]>();
+  private seenMessageIds = new Set<string>();
+  private localTransferRegistry = new Map<string, string>(); // transferCode -> senderPeerId
 
   public readonly peerId: string;
   public peerName: string;
@@ -84,20 +87,67 @@ export class WebRtcEngine {
   public connect(workspaceId: string, serverUrl?: string) {
     this.currentWorkspaceId = workspaceId;
 
-    let wsUrl = serverUrl;
-    if (!wsUrl) {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-      if (apiBase) {
-        const cleanBase = apiBase.replace(/^http/, 'ws');
-        wsUrl = `${cleanBase}/ws/signaling`;
-      } else {
-        const isHttps = window.location.protocol === 'https:';
-        const host = window.location.hostname === 'localhost' ? 'localhost:8080' : window.location.host;
-        wsUrl = `${isHttps ? 'wss' : 'ws'}://${host}/ws/signaling`;
+    // 1. Initialize BroadcastChannel mesh for instant zero-config cross-tab & local P2P
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        if (this.bc) {
+          this.bc.close();
+        }
+        this.bc = new BroadcastChannel('hyperx_mesh_' + workspaceId);
+        this.bc.onmessage = async (event) => {
+          const msg = event.data;
+          if (!msg || typeof msg !== 'object') return;
+          if (msg.senderPeerId === this.peerId || msg.peerId === this.peerId) return;
+
+          // Message deduplication
+          if (msg.msgId) {
+            if (this.seenMessageIds.has(msg.msgId)) return;
+            this.seenMessageIds.add(msg.msgId);
+            if (this.seenMessageIds.size > 500) {
+              const first = this.seenMessageIds.values().next().value;
+              if (first) this.seenMessageIds.delete(first);
+            }
+          }
+
+          await this.handleSignalingMessage(msg);
+        };
+
+        // Broadcast presence announcement to any existing tabs/peers
+        setTimeout(() => {
+          this.sendWs({
+            type: 'peer-ping',
+            workspaceId,
+            peerId: this.peerId,
+            peerName: this.peerName,
+          });
+        }, 150);
+
+        this.callbacks.onConnectionStatus?.('CONNECTED');
+      } catch (err) {
+        console.warn('BroadcastChannel initialization error:', err);
       }
     }
 
-    // Attach JWT authentication query parameter
+    // 2. Resolve WebSocket URL (from custom setting, apiBase, or localhost)
+    let wsUrl = serverUrl;
+    if (!wsUrl) {
+      const apiBase = getApiBase();
+      if (apiBase) {
+        const cleanBase = apiBase.replace(/^http/, 'ws');
+        wsUrl = `${cleanBase}/ws/signaling`;
+      } else if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        wsUrl = `ws://${window.location.hostname}:8080/ws/signaling`;
+      }
+    }
+
+    if (!wsUrl) {
+      // Running standalone/serverless on Vercel without a configured backend:
+      // Local BroadcastChannel mesh is active and ready
+      this.callbacks.onConnectionStatus?.('CONNECTED');
+      return;
+    }
+
+    // Attach JWT authentication query parameter if token exists
     const token = getStoredToken();
     if (token) {
       const separator = wsUrl.includes('?') ? '&' : '?';
@@ -105,7 +155,6 @@ export class WebRtcEngine {
     }
 
     try {
-      this.callbacks.onConnectionStatus?.('CONNECTING');
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
@@ -122,6 +171,14 @@ export class WebRtcEngine {
       this.ws.onmessage = async (event) => {
         try {
           const msg = JSON.parse(event.data);
+          if (msg.msgId) {
+            if (this.seenMessageIds.has(msg.msgId)) return;
+            this.seenMessageIds.add(msg.msgId);
+            if (this.seenMessageIds.size > 500) {
+              const first = this.seenMessageIds.values().next().value;
+              if (first) this.seenMessageIds.delete(first);
+            }
+          }
           await this.handleSignalingMessage(msg);
         } catch (e) {
           console.error('Failed to parse signaling message:', e);
@@ -129,14 +186,20 @@ export class WebRtcEngine {
       };
 
       this.ws.onclose = () => {
-        this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        if (!this.bc) {
+          this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        }
       };
 
       this.ws.onerror = () => {
-        this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        if (!this.bc) {
+          this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        }
       };
     } catch {
-      this.callbacks.onConnectionStatus?.('DISCONNECTED');
+      if (!this.bc) {
+        this.callbacks.onConnectionStatus?.('DISCONNECTED');
+      }
     }
   }
 
@@ -145,6 +208,10 @@ export class WebRtcEngine {
       this.ws.close();
       this.ws = null;
     }
+    if (this.bc) {
+      this.bc.close();
+      this.bc = null;
+    }
     this.peerConnections.forEach(pc => pc.close());
     this.peerConnections.clear();
     this.dataChannels.clear();
@@ -152,43 +219,51 @@ export class WebRtcEngine {
   }
 
   public sendChat(text: string) {
-    if (!this.currentWorkspaceId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.callbacks.onChatMessage?.({
-        id: Math.random().toString(36).substring(2, 9),
-        senderPeerId: this.peerId,
-        senderName: this.peerName,
-        text,
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    this.sendWs({
-      type: 'chat',
-      workspaceId: this.currentWorkspaceId,
+    const msg = {
+      id: Math.random().toString(36).substring(2, 9),
       senderPeerId: this.peerId,
       senderName: this.peerName,
       text,
       timestamp: Date.now(),
+    };
+
+    this.callbacks.onChatMessage?.(msg);
+
+    this.sendWs({
+      type: 'chat',
+      workspaceId: this.currentWorkspaceId,
+      ...msg,
     });
   }
 
   // --- Point-to-Point Transfer Session Protocol ---
 
   public announceTransfer(transferId: string, manifest: FileManifest) {
+    const code = transferId.toUpperCase().trim();
+    this.localTransferRegistry.set(code, this.peerId);
     this.sendWs({
       type: 'transfer-announce',
       workspaceId: this.currentWorkspaceId,
-      transferId,
-      manifest,
+      transferId: code,
+      senderPeerId: this.peerId,
+      manifest: {
+        ...manifest,
+        senderPeerId: this.peerId,
+        senderName: this.peerName,
+      },
     });
   }
 
   public requestTransfer(transferId: string) {
+    const code = transferId.toUpperCase().trim();
+    const knownSender = this.localTransferRegistry.get(code);
     this.sendWs({
       type: 'transfer-request',
       workspaceId: this.currentWorkspaceId,
-      transferId,
+      transferId: code,
+      targetPeerId: knownSender,
+      senderPeerId: this.peerId,
+      senderName: this.peerName,
     });
   }
 
@@ -198,7 +273,12 @@ export class WebRtcEngine {
       workspaceId: this.currentWorkspaceId,
       transferId,
       targetPeerId: receiverPeerId,
-      manifest,
+      senderPeerId: this.peerId,
+      manifest: {
+        ...manifest,
+        senderPeerId: this.peerId,
+        senderName: this.peerName,
+      },
     });
   }
 
@@ -208,6 +288,7 @@ export class WebRtcEngine {
       workspaceId: this.currentWorkspaceId,
       transferId,
       targetPeerId,
+      senderPeerId: this.peerId,
       completedChunks,
     });
   }
@@ -293,7 +374,22 @@ export class WebRtcEngine {
     return Array.from(this.dataChannels.values());
   }
 
-  private sendWs(msg: unknown) {
+  private sendWs(msg: Record<string, unknown>) {
+    if (!msg.msgId) {
+      msg.msgId = Math.random().toString(36).substring(2, 9) + Date.now();
+    }
+    this.seenMessageIds.add(msg.msgId as string);
+
+    // 1. Broadcast via local BroadcastChannel mesh
+    if (this.bc) {
+      try {
+        this.bc.postMessage(msg);
+      } catch (e) {
+        console.warn('BroadcastChannel postMessage error:', e);
+      }
+    }
+
+    // 2. Broadcast via WebSocket if open
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
@@ -315,6 +411,33 @@ export class WebRtcEngine {
           transferId: (msg.transferId as string) || '',
           status: (msg.status as string) || 'REGISTERED',
         });
+        break;
+      }
+      case 'peer-ping': {
+        const peerId = msg.peerId as string;
+        const peerName = (msg.peerName as string) || 'Peer';
+        if (peerId && peerId !== this.peerId) {
+          this.knownPeers.set(peerId, { peerId, peerName });
+          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+          this.sendWs({
+            type: 'peer-pong',
+            workspaceId: this.currentWorkspaceId,
+            targetPeerId: peerId,
+            peerId: this.peerId,
+            peerName: this.peerName,
+          });
+        }
+        break;
+      }
+      case 'peer-pong': {
+        const targetPeerId = msg.targetPeerId as string;
+        const peerId = msg.peerId as string;
+        const peerName = (msg.peerName as string) || 'Peer';
+        if (targetPeerId === this.peerId && peerId && peerId !== this.peerId) {
+          this.knownPeers.set(peerId, { peerId, peerName });
+          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+          await this.initiateCall(peerId);
+        }
         break;
       }
       case 'peers': {
@@ -355,14 +478,17 @@ export class WebRtcEngine {
         break;
       }
       case 'offer': {
+        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
         await this.handleOffer(msg.senderPeerId as string, msg.sdp as RTCSessionDescriptionInit);
         break;
       }
       case 'answer': {
+        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
         await this.handleAnswer(msg.senderPeerId as string, msg.sdp as RTCSessionDescriptionInit);
         break;
       }
       case 'ice-candidate': {
+        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
         await this.handleIceCandidate(msg.senderPeerId as string, msg.candidate as RTCIceCandidateInit);
         break;
       }
@@ -376,15 +502,28 @@ export class WebRtcEngine {
         });
         break;
       }
+      case 'transfer-announce': {
+        const transferId = (msg.transferId as string || '').toUpperCase().trim();
+        const sender = (msg.senderPeerId as string) || (msg.manifest as Record<string, unknown>)?.senderPeerId as string;
+        if (transferId && sender) {
+          this.localTransferRegistry.set(transferId, sender);
+        }
+        break;
+      }
       case 'transfer-request': {
-        this.callbacks.onTransferRequested?.({
-          transferId: msg.transferId as string,
-          receiverPeerId: msg.senderPeerId as string,
-          receiverPeerName: (msg.senderName as string) || 'Peer',
-        });
+        const transferId = (msg.transferId as string || '').toUpperCase().trim();
+        const targetSender = (msg.targetPeerId as string) || this.localTransferRegistry.get(transferId);
+        if (targetSender === this.peerId || this.localTransferRegistry.get(transferId) === this.peerId) {
+          this.callbacks.onTransferRequested?.({
+            transferId: msg.transferId as string,
+            receiverPeerId: msg.senderPeerId as string,
+            receiverPeerName: (msg.senderName as string) || 'Peer',
+          });
+        }
         break;
       }
       case 'transfer-accept': {
+        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
         this.callbacks.onTransferAccepted?.({
           transferId: msg.transferId as string,
           senderPeerId: msg.senderPeerId as string,
@@ -393,6 +532,7 @@ export class WebRtcEngine {
         break;
       }
       case 'bitmask-sync': {
+        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
         this.callbacks.onBitmaskSynced?.({
           transferId: msg.transferId as string,
           senderPeerId: msg.senderPeerId as string,
