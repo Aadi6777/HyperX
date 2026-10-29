@@ -35,6 +35,7 @@ import {
   getChunk
 } from '../services/indexedDbCache';
 import { recordTransfer } from '../services/workspaceService';
+import { getApiBase } from '../services/authService';
 import {
   WebRtcEngine,
   IncomingChunkPayload
@@ -445,11 +446,6 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           acknowledgedChunks: new Set(),
           targetPeerId: senderPeerId,
         });
-
-        // Proactively establish DataChannel to sender
-        if (webrtcEngine && senderPeerId) {
-          webrtcEngine.ensureDataChannel(senderPeerId, 3000).catch(() => {});
-        }
       },
 
       // Sender receives bitmask sync of acknowledged chunks (Resumable Bitmask Recovery)
@@ -839,7 +835,11 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   };
 
   const copyTransferLink = (code: string) => {
-    const url = `${window.location.origin}/?code=${code}`;
+    const apiBase = getApiBase();
+    let url = `${window.location.origin}/?code=${code}`;
+    if (apiBase && !apiBase.includes('localhost') && !apiBase.includes('127.0.0.1')) {
+      url += `&backend=${encodeURIComponent(apiBase)}`;
+    }
     navigator.clipboard.writeText(url);
     setCopiedLink(code);
     setTimeout(() => setCopiedLink(null), 2500);

@@ -39,12 +39,41 @@ export function clearSession(): void {
   localStorage.removeItem(USER_KEY);
 }
 
+export const DEFAULT_PUBLIC_BACKEND = 'https://associates-metabolism-implement-fri.trycloudflare.com';
+
 export const getApiBase = (): string => {
   if (typeof window !== 'undefined') {
+    // 1. Query parameter override (e.g. ?backend=https://... or ?node=https://...)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const queryBackend = params.get('backend') || params.get('node');
+      if (queryBackend) {
+        const clean = queryBackend.trim().replace(/\/+$/, '');
+        localStorage.setItem('hyperx_api_base', clean);
+        return clean;
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+
+    // 2. Custom override saved in localStorage
     const custom = localStorage.getItem('hyperx_api_base');
     if (custom) return custom.trim().replace(/\/+$/, '');
+
+    // 3. Environment variable set at build/runtime
+    const envBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+    if (envBase) return envBase;
+
+    // 4. Local network autodetection
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) {
+      return `http://${host}:8080`;
+    }
+
+    // 5. Default high-availability public signaling backend for Vercel and remote peers
+    return DEFAULT_PUBLIC_BACKEND;
   }
-  return (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+  return (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '') || DEFAULT_PUBLIC_BACKEND;
 };
 
 export function setCustomApiBase(url: string): void {

@@ -139,6 +139,7 @@ export class WebRtcEngine {
   private seenMessageIds = new Set<string>();
   private localTransferRegistry = new Map<string, string>(); // transferCode -> senderPeerId
   private peerStates = new Map<string, PeerNegotiationState>();
+  private isExplicitlyClosed = false;
 
   public readonly peerId: string;
   public peerName: string;
@@ -159,6 +160,7 @@ export class WebRtcEngine {
 
   public connect(workspaceId: string, serverUrl?: string) {
     this.currentWorkspaceId = workspaceId;
+    this.isExplicitlyClosed = false;
 
     // 1. Initialize BroadcastChannel mesh for instant zero-config cross-tab & local P2P
     if (typeof BroadcastChannel !== 'undefined') {
@@ -262,24 +264,27 @@ export class WebRtcEngine {
       };
 
       this.ws.onclose = () => {
-        if (!this.bc) {
-          this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        this.callbacks.onConnectionStatus?.('DISCONNECTED');
+        if (this.currentWorkspaceId && !this.isExplicitlyClosed) {
+          setTimeout(() => {
+            if (this.currentWorkspaceId && !this.isExplicitlyClosed) {
+              console.log('[WebRTC] Auto-reconnecting to signaling mesh...');
+              this.connect(this.currentWorkspaceId);
+            }
+          }, 3000);
         }
       };
 
-      this.ws.onerror = () => {
-        if (!this.bc) {
-          this.callbacks.onConnectionStatus?.('DISCONNECTED');
-        }
+      this.ws.onerror = (err) => {
+        console.warn('[WebRTC] WebSocket error:', err);
       };
     } catch {
-      if (!this.bc) {
-        this.callbacks.onConnectionStatus?.('DISCONNECTED');
-      }
+      this.callbacks.onConnectionStatus?.('DISCONNECTED');
     }
   }
 
   public disconnect() {
+    this.isExplicitlyClosed = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -747,6 +752,10 @@ export class WebRtcEngine {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
         { urls: 'stun:global.stun.twilio.com:3478' },
         {
           urls: [
@@ -758,7 +767,7 @@ export class WebRtcEngine {
           credential: 'openrelay',
         },
       ],
-      iceCandidatePoolSize: 4,
+      iceCandidatePoolSize: 8,
     });
 
     pc.onicecandidate = (event) => {
