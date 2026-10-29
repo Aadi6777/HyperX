@@ -1,0 +1,14 @@
+{
+  "name": "hyperx",
+  "private": true,
+  "description": "HyperX - Enterprise Zero-RAM P2P Streaming & CRDT Collaboration Platform",
+  "scripts": {
+    "dev": "./start.sh",
+    "start": "./start.sh",
+    "dev:backend": "cd backend && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "test": "pytest backend/tests"
+  }
+}
+

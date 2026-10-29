@@ -49,6 +49,11 @@ def test_websocket_signaling_full_lifecycle():
             assert ack["type"] == "transfer-registered"
             assert ack["transferId"] == "HX-DEMO-99"
 
+            # Bob receives transfer-announce broadcast from workspace
+            bob_announce = ws2.receive_json()
+            assert bob_announce["type"] == "transfer-announce"
+            assert bob_announce["transferId"] == "HX-DEMO-99"
+
             # 4. Bob requests transfer code
             ws2.send_json({
                 "type": "transfer-request",
@@ -118,7 +123,45 @@ def test_websocket_signaling_full_lifecycle():
             assert bitmask_msg["type"] == "bitmask-sync"
             assert bitmask_msg["completedChunks"] == [0, 1, 2]
 
-            # 10. Workspace Chat Broadcast
+            # 10. Transfer chunk relay forwarding
+            ws1.send_json({
+                "type": "transfer-chunk",
+                "workspaceId": "test-ws-room",
+                "targetPeerId": "peer-bob",
+                "transferId": "HX-DEMO-99",
+                "chunkIndex": 0,
+                "totalChunks": 1,
+                "dataBase64": "SGVsbG8gSHlwZXJY"
+            })
+            chunk_msg = ws2.receive_json()
+            assert chunk_msg["type"] == "transfer-chunk"
+            assert chunk_msg["senderPeerId"] == "peer-alice"
+            assert chunk_msg["dataBase64"] == "SGVsbG8gSHlwZXJY"
+
+            # 11. Transfer ACK
+            ws2.send_json({
+                "type": "transfer-ack",
+                "workspaceId": "test-ws-room",
+                "targetPeerId": "peer-alice",
+                "transferId": "HX-DEMO-99",
+                "chunkIndex": 0
+            })
+            ack_msg = ws1.receive_json()
+            assert ack_msg["type"] == "transfer-ack"
+            assert ack_msg["senderPeerId"] == "peer-bob"
+
+            # 12. Transfer Complete
+            ws2.send_json({
+                "type": "transfer-complete",
+                "workspaceId": "test-ws-room",
+                "targetPeerId": "peer-alice",
+                "transferId": "HX-DEMO-99"
+            })
+            comp_msg = ws1.receive_json()
+            assert comp_msg["type"] == "transfer-complete"
+            assert comp_msg["senderPeerId"] == "peer-bob"
+
+            # 13. Workspace Chat Broadcast
             ws2.send_json({
                 "type": "chat",
                 "workspaceId": "test-ws-room",
@@ -129,7 +172,7 @@ def test_websocket_signaling_full_lifecycle():
             assert chat_msg["senderPeerId"] == "peer-bob"
             assert chat_msg["text"] == "Hello Alice!"
 
-            # 11. Bob sends leave message
+            # 14. Bob sends leave message
             ws2.send_json({
                 "type": "leave"
             })

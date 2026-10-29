@@ -75,7 +75,7 @@ class SignalingManager:
 
         if msg_type == "join":
             await self.handle_join(websocket, msg)
-        elif msg_type in ("offer", "answer", "ice-candidate", "transfer-accept", "bitmask-sync"):
+        elif msg_type in ("offer", "answer", "ice-candidate", "transfer-accept", "bitmask-sync", "transfer-chunk", "transfer-ack", "transfer-complete"):
             await self.handle_forward(websocket, msg)
         elif msg_type in ("chat", "file-announcement"):
             await self.handle_broadcast(websocket, msg)
@@ -176,6 +176,12 @@ class SignalingManager:
                 "transferId": norm_code,
                 "status": "REGISTERED"
             })
+            # Broadcast announcement to workspace peers so all tabs know the sender
+            workspace_id = meta.workspace_id or msg.get("workspaceId")
+            if workspace_id:
+                msg["senderPeerId"] = meta.peer_id
+                msg["senderName"] = meta.peer_name
+                await self.broadcast_to_workspace(workspace_id, meta.peer_id, msg)
 
     async def handle_transfer_request(self, websocket: WebSocket, msg: Dict[str, Any]):
         transfer_id = msg.get("transferId")
@@ -184,7 +190,7 @@ class SignalingManager:
             return
 
         norm_code = str(transfer_id).upper().strip()
-        target_sender_peer_id = self.transfer_registry.get(norm_code)
+        target_sender_peer_id = self.transfer_registry.get(norm_code) or msg.get("targetPeerId")
         if not target_sender_peer_id:
             await self.send_to_socket(websocket, {
                 "type": "error",

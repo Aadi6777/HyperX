@@ -15,7 +15,8 @@ import {
   Check,
   AlertTriangle,
   KeyRound,
-  FileCheck
+  FileCheck,
+  Link2
 } from 'lucide-react';
 import {
   deriveKeyFromSecret,
@@ -83,6 +84,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const [unlockPassphrases, setUnlockPassphrases] = useState<Record<string, string>>({});
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [receiveLoading, setReceiveLoading] = useState(false);
   const [receiveError, setReceiveError] = useState<string | null>(null);
 
@@ -208,6 +210,12 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     const elapsedSec = (Date.now() - stats.startTime) / 1000;
     const speedMBps = elapsedSec > 0 ? parseFloat(((stats.bytesReceived / (1024 * 1024)) / elapsedSec).toFixed(2)) : 0;
 
+    // Send ACK back to sender so sender UI updates in real-time
+    const effectiveTransferId = transferId || currentTransfer?.transferId;
+    if (effectiveTransferId && senderPeerId && webrtcEngine) {
+      webrtcEngine.sendChunkAck(effectiveTransferId, senderPeerId, chunkIndex);
+    }
+
     setTransfers((prev) =>
       prev.map((t) => {
         const isMatch = t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase());
@@ -240,7 +248,10 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         return t;
       })
     );
-  }, [passphrase]);
+  }, [passphrase, webrtcEngine]);
+
+  // Ref to track expected manifest hashes across racing packets
+  const manifestHashesRef = useRef<Map<string, string>>(new Map());
 
   // Full File Manifest Root Integrity Check
   const validateReceivedIntegrity = async (transfer: LocalTransfer, hashes: string[]) => {
@@ -262,8 +273,10 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       }
 
       const computedRoot = await computeManifestRootHash(finalHashes);
-      if (transfer.manifestHash && transfer.manifestHash !== computedRoot) {
-        console.error('Integrity Mismatch!', { expected: transfer.manifestHash, computed: computedRoot });
+      const expectedHash = transfer.manifestHash || manifestHashesRef.current.get(transfer.transferId.toUpperCase()) || manifestHashesRef.current.get(transfer.fileId);
+
+      if (expectedHash && expectedHash !== computedRoot) {
+        console.error('Integrity Mismatch!', { expected: expectedHash, computed: computedRoot });
         setTransfers((prev) =>
           prev.map((t) =>
             t.fileId === transfer.fileId
@@ -276,6 +289,22 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           )
         );
       } else {
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.fileId === transfer.fileId
+              ? {
+                  ...t,
+                  status: 'COMPLETED',
+                  manifestHash: expectedHash || computedRoot,
+                  errorMessage: undefined,
+                }
+              : t
+          )
+        );
+        // Notify sender that entire file transfer is verified and complete
+        if (webrtcEngine && transfer.targetPeerId) {
+          webrtcEngine.sendTransferComplete(transfer.transferId, transfer.targetPeerId);
+        }
         // Record completed transfer in database
         if (workspaceId) {
           recordTransfer(workspaceId, transfer.fileName, transfer.fileSize, computedRoot);
@@ -355,6 +384,10 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       // Receiver gets confirmation and manifest from sender
       onTransferAccepted: (acc) => {
         const { transferId, senderPeerId, manifest } = acc;
+        if (manifest.manifestHash) {
+          manifestHashesRef.current.set(transferId.toUpperCase(), manifest.manifestHash);
+          manifestHashesRef.current.set(manifest.fileId, manifest.manifestHash);
+        }
         setTransfers((prev) => {
           const existing = prev.find(
             (t) => t.transferId.toUpperCase() === transferId.toUpperCase() || t.fileId === manifest.fileId
@@ -404,6 +437,19 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           isComplete: false,
           createdAt: Date.now(),
         });
+
+        // Initialize transfer control for receiver
+        transferControlsRef.current.set(manifest.fileId, {
+          isPaused: false,
+          isCancelled: false,
+          acknowledgedChunks: new Set(),
+          targetPeerId: senderPeerId,
+        });
+
+        // Proactively establish DataChannel to sender
+        if (webrtcEngine && senderPeerId) {
+          webrtcEngine.ensureDataChannel(senderPeerId, 3000).catch(() => {});
+        }
       },
 
       // Sender receives bitmask sync of acknowledged chunks (Resumable Bitmask Recovery)
@@ -434,6 +480,25 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
             }
             return t;
           })
+        );
+      },
+
+      onChunkAck: (ack) => {
+        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === ack.transferId.toUpperCase());
+        if (!transfer) return;
+        const ctrl = transferControlsRef.current.get(transfer.fileId);
+        if (ctrl) {
+          ctrl.acknowledgedChunks.add(ack.chunkIndex);
+        }
+      },
+
+      onTransferComplete: (comp) => {
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.transferId.toUpperCase() === comp.transferId.toUpperCase()
+              ? { ...t, status: 'COMPLETED' }
+              : t
+          )
         );
       },
 
@@ -530,6 +595,13 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const executePointToPointStream = async (transfer: LocalTransfer, targetPeerId: string) => {
     const { file, fileId, totalChunks, isEncrypted, passphrase: pass } = transfer;
     if (!file || !webrtcEngine) return;
+
+    // Ensure DataChannel is completely open before slicing or streaming chunks
+    try {
+      await webrtcEngine.ensureDataChannel(targetPeerId, 10000);
+    } catch (err) {
+      console.warn('[HyperX] DataChannel preflight timed out, will retry per-chunk:', err);
+    }
 
     let key: CryptoKey | null = null;
     if (isEncrypted && pass) {
@@ -647,8 +719,11 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   };
 
   const handleConnectStreamByCode = () => {
-    const code = receiveCodeInput.trim().toUpperCase();
+    let code = receiveCodeInput.trim().toUpperCase();
     if (!code) return;
+    if (!code.startsWith('HX-') && code.length === 6) {
+      code = 'HX-' + code;
+    }
 
     if (!webrtcEngine) {
       setReceiveError('P2P mesh connection is initializing. Please wait a moment and try again.');
@@ -761,6 +836,13 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2500);
+  };
+
+  const copyTransferLink = (code: string) => {
+    const url = `${window.location.origin}/?code=${code}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(code);
+    setTimeout(() => setCopiedLink(null), 2500);
   };
 
   return (
@@ -1030,9 +1112,17 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                           type="button"
                           onClick={() => copyTransferCode(t.transferId)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--bauhaus-yellow)', padding: '0 2px' }}
-                          title="Copy Transfer Code to share with receiver"
+                          title="Copy Transfer Code"
                         >
                           {copiedCode === t.transferId ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyTransferLink(t.transferId)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--bauhaus-yellow)', padding: '0 2px' }}
+                          title="Copy Direct Link (instant receiver connect)"
+                        >
+                          {copiedLink === t.transferId ? <Check size={11} color="var(--accent-green)" /> : <Link2 size={11} />}
                         </button>
                       </div>
 
