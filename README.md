@@ -22,7 +22,7 @@ On top of that, traditional cloud storage services require uploading massive mul
 We build HyperX step-by-step across 10 disciplined phases to ensure every layer is resilient, battle-tested, and interview-ready:
 
 ```
-[Phase 1]  🟢 Foundation & Setup        (Python 3.11+ / FastAPI, React 18 + TS, PostgreSQL / SQLite)
+[Phase 1]  🟢 Foundation & Setup        (Spring Boot 3.3, React 18 + TS, PostgreSQL, Flyway V1)
 [Phase 2]  🟢 Auth & Identity           (JWT, BCrypt, Stateless Security, RBAC)
 [Phase 3]  🟢 Workspace Boundaries      (Multi-tenant isolation, roles, activity audit logs)
 [Phase 4]  🟢 WebRTC Signaling Engine   (STUN/TURN, SDP offer/answer exchange via WebSockets)
@@ -31,7 +31,7 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
 [Phase 7]  🟢 Resumable Transfers       (Bitmask recovery, network reconnection handling)
 [Phase 8]  🟢 End-to-End Encryption     (Client-side AES-256-GCM + SHA-256 verification)
 [Phase 9]  🟢 Peer Collaboration        (Real-time chat, notifications, file annotations)
-[Phase 10] 🟢 Production Deployment    (Vercel frontend, Dockerized Python backend, CI/CD)
+[Phase 10] 🟢 Production Deployment    (Vercel frontend, Dockerized backend, CI/CD)
 ```
 
 ---
@@ -60,13 +60,13 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
              Exchange │                 │ Exchange
                       ▼                 ▼
              ┌───────────────────────────────────┐
-             │    Python FastAPI Signaling Server│
+             │    Spring Boot Signaling Server   │
              │   (WebSocket / JWT / Workspaces)  │
              └─────────────────┬─────────────────┘
                                │
                                ▼
-                        PostgreSQL 16
-                   (Asyncpg / SQLAlchemy)
+                       PostgreSQL 16
+                   (Flyway Schema State)
 ```
 
 ---
@@ -75,8 +75,8 @@ We build HyperX step-by-step across 10 disciplined phases to ensure every layer 
 
 - **Frontend**: React 18, TypeScript, Vite, Vanilla CSS (cyber/glassmorphic theme).
 - **Client Storage & Streaming**: WebRTC DataChannels, Streams API, IndexedDB, Web Crypto API.
-- **Backend**: Python 3.11+, FastAPI, Uvicorn, SQLAlchemy (asyncio), Asyncpg, WebSockets.
-- **Database & Persistence**: PostgreSQL 16 (production/cloud) & SQLite (resilient local fallback).
+- **Backend**: Java 21, Spring Boot 3.3, Spring Security, Spring WebSocket.
+- **Database & Migrations**: PostgreSQL 16 managed strictly through versioned Flyway scripts (`V1__init.sql`).
 - **Orchestration & Deploy**: Docker Compose, Vercel edge deployment ready.
 
 ---
@@ -89,18 +89,17 @@ git clone https://github.com/Aadi6777/HyperX.git
 cd HyperX
 ```
 
-#### 2. Start PostgreSQL via Docker (Optional, SQLite fallback is built-in)
+#### 2. Start PostgreSQL via Docker
 ```bash
 docker compose up -d postgres
 ```
 
-#### 3. Run the Python FastAPI Backend
+#### 3. Run the Spring Boot Backend
 ```bash
 cd backend
-pip install -r requirements.txt
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+./mvnw spring-boot:run
 ```
-*The backend runs on `http://localhost:8080` with auto-provisioned tables and health telemetry.*
+*The backend runs on `http://localhost:8080`. Flyway automatically runs database migrations on startup.*
 
 #### 4. Run the React Frontend
 ```bash
@@ -109,6 +108,27 @@ npm install
 npm run dev
 ```
 *Open `http://localhost:5173` to view the live dashboard and capability probes.*
+
+---
+
+### How to send a file (2 browsers)
+
+1. Open the app. The URL gets a room code, e.g. `http://localhost:5173/#room=K7M2QX9P`. No login needed.
+2. Click **Copy invite link** and open it in the other browser/device (or press **RECEIVE** and paste the code).
+3. Wait until both sides show a green dot next to the peer name and `1 P2P Channels`.
+4. Drop a file on the sender. The receiver sees an **incoming offer**: press **Accept & receive**, then **Save file**.
+5. The sender shows **DELIVERED** only after the receiver has confirmed the file.
+
+Both sides need the **same encryption passphrase** (or turn encryption off). A mismatch is reported as an error instead of producing a corrupt file.
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| Red "Signaling server unreachable" banner | Backend isn't running, or (on Vercel) `VITE_API_BASE_URL` / `VITE_SIGNALING_URL` isn't set. |
+| Peers visible but dot stays yellow | Direct connection failed: the two networks need a TURN relay. Configure `VITE_TURN_*` (see `.env.example`). |
+| Encryption toggle disabled | The page isn't HTTPS/localhost (e.g. `http://192.168.x.x`), so the browser hides WebCrypto. Use HTTPS or a tunnel. |
+| Different users don't see each other | They must be in the same room: share the invite link rather than relying on each account's default workspace. |
 
 ---
 
@@ -126,7 +146,7 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
 ### Current Status: All 10 Phases Complete 🚀
 
 - [x] **Phase 1: Project Setup & Baseline**
-  - Database schema & migrations for `users`, `workspaces`, `members`
+  - Database schema & Flyway migrations for `users`, `workspaces`, `members`
   - Health diagnostic API (`/api/v1/health`)
   - Stateless security & CORS configuration
   - React + Vite dashboard with live hardware and browser capability probes
@@ -137,11 +157,11 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
   - Workspace creation with slug isolation, member roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`)
   - Real-time audit trail and file transfer logging (`activity_logs`, `transfer_records`)
 - [x] **Phase 4: WebRTC Signaling Engine**
-  - Python WebSocket signaling handler (`/ws/signaling`)
+  - Spring WebSocket signaling handler (`/ws/signaling`)
   - STUN/TURN integration, SDP offer/answer exchanges, and ICE candidate negotiation
 - [x] **Phase 5: Zero-RAM Chunk Engine**
-  - Dynamic chunking (512KB slices) with Web Streams API
-  - Active backpressure control via `bufferedAmount` & `bufferedamountlow`
+  - Fixed 64KB chunks (must stay under the 256KB SCTP message limit) with pipelined reads
+  - Real backpressure via `bufferedAmount` & `bufferedamountlow`; explicit offer → accept → stream → ACK handshake
 - [x] **Phase 6: Local Chunk Cache**
   - Client-side IndexedDB persistence (`HyperX_ChunkStorage`)
   - Safe byte reconstruction and direct file assembly without browser RAM spikes
@@ -155,6 +175,6 @@ HyperX is pre-configured with root and nested `vercel.json` configurations:
   - Real-time workspace chat with live online peer presence
   - Chunk heatmap visualizer and audit trail viewer
 - [x] **Phase 10: Production Deployment**
-  - Lightweight Dockerfile for Python Backend & React Frontend (Nginx SPA)
+  - Multi-stage Dockerfile for Spring Boot Backend & React Frontend (Nginx SPA)
   - Full Docker Compose orchestration and Vercel edge deployment configuration
 

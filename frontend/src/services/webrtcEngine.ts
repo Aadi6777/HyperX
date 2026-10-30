@@ -1,10 +1,13 @@
 /**
- * HyperX Phase 4, 5 & 9: Authenticated WebRTC Signaling & Point-to-Point DataChannel Engine
- * Point-to-point chunk delivery, active backpressure control, bitmask negotiation, and JWT authentication.
+ * HyperX Phase 4 & 9: WebRTC Signaling Engine & Peer Collaboration
+ * Coordinates STUN/TURN, SDP offer/answer exchange over the WebSocket signaling server, and the
+ * RTCDataChannel mesh that carries control messages + file chunks between browsers.
+ *
+ * This class only moves bytes and tracks link health. The file-transfer protocol that runs on top
+ * of the channels lives in transferManager.ts.
  */
 
-import { getStoredToken, getApiBase } from './authService';
-import { ChunkHeader, HIGH_WATERMARK, waitForBufferDrain } from './chunkEngine';
+import { LOW_WATERMARK } from './chunkEngine';
 
 export interface PeerInfo {
   peerId: string;
@@ -19,583 +22,349 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface FileManifest {
-  transferId: string;
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  totalChunks: number;
-  isEncrypted: boolean;
-  manifestHash?: string;
-  senderPeerId?: string;
-  senderName?: string;
-}
+export type SignalingStatus = 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
+export type LinkState = 'connecting' | 'open';
 
-export interface IncomingChunkPayload {
-  fileId: string;
-  transferId?: string;
-  chunkIndex: number;
-  totalChunks: number;
-  isEncrypted: boolean;
-  iv?: number[];
-  data: ArrayBuffer;
-  senderPeerId: string;
+/** JSON control message exchanged over a data channel (OFFER, REQUEST, STOP, DONE, ACK, ...). */
+export interface ControlMessage {
+  t: string;
+  [key: string]: unknown;
 }
 
 export type WebRtcEventCallback = {
   onPeersUpdated?: (peers: PeerInfo[]) => void;
   onChatMessage?: (msg: ChatMessage) => void;
-  onTransferRequested?: (req: { transferId: string; receiverPeerId: string; receiverPeerName: string }) => void;
-  onTransferAccepted?: (acc: { transferId: string; senderPeerId: string; manifest: FileManifest }) => void;
-  onBitmaskSynced?: (sync: { transferId: string; senderPeerId: string; completedChunks: number[] }) => void;
-  onChunkReceived?: (payload: IncomingChunkPayload) => void;
-  onChunkAck?: (ack: { transferId: string; chunkIndex: number; senderPeerId: string }) => void;
-  onTransferComplete?: (comp: { transferId: string; senderPeerId: string }) => void;
-  onDataChannelReady?: (peerId: string, channel: RTCDataChannel) => void;
-  onConnectionStatus?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void;
-  onError?: (err: { message: string; code?: string }) => void;
-  onTransferRegistered?: (reg: { transferId: string; status: string }) => void;
+  onConnectionStatus?: (status: SignalingStatus) => void;
+  /** Fires whenever any peer link changes state; map of peerId -> state (closed links are absent). */
+  onLinksChanged?: (links: Record<string, LinkState>) => void;
+  onLinkOpen?: (peerId: string) => void;
+  onLinkClosed?: (peerId: string) => void;
+  onControl?: (peerId: string, msg: ControlMessage) => void;
+  onFrame?: (peerId: string, frame: ArrayBuffer) => void;
 };
 
-const MAGIC_HEADER_BYTE = 0x48; // 'H' for HyperX
-const PROTOCOL_VERSION = 1;
-
-export function encodeFramedChunk(header: ChunkHeader, data: ArrayBuffer): ArrayBuffer {
-  const headerJson = JSON.stringify(header);
-  const headerBytes = new TextEncoder().encode(headerJson);
-  const totalLength = 8 + headerBytes.byteLength + data.byteLength;
-  const packet = new Uint8Array(totalLength);
-  const view = new DataView(packet.buffer);
-
-  packet[0] = MAGIC_HEADER_BYTE;
-  packet[1] = PROTOCOL_VERSION;
-  packet[2] = 0;
-  packet[3] = 0;
-  view.setUint32(4, headerBytes.byteLength, false); // big-endian
-
-  packet.set(headerBytes, 8);
-  packet.set(new Uint8Array(data), 8 + headerBytes.byteLength);
-
-  return packet.buffer;
-}
-
-export function decodeFramedChunk(buffer: ArrayBuffer): { header: ChunkHeader; data: ArrayBuffer } | null {
-  if (buffer.byteLength < 8) return null;
-  const bytes = new Uint8Array(buffer);
-  if (bytes[0] !== MAGIC_HEADER_BYTE || bytes[1] !== PROTOCOL_VERSION) {
-    return null;
+/**
+ * STUN finds your public address; TURN relays traffic when a direct path is impossible
+ * (symmetric NAT, carrier-grade NAT on mobile data, strict corporate firewalls). A STUN-only
+ * setup works on one LAN and between friendly home routers, and silently fails everywhere else.
+ *
+ * Configure your own relay with VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL, or
+ * supply a full JSON array in VITE_ICE_SERVERS. When nothing is configured we fall back to the
+ * free public Open Relay test server so cross-network transfers have a chance of working; for
+ * production use your own TURN (coturn, Metered, Cloudflare, Twilio...).
+ */
+export function buildIceServers(): RTCIceServer[] {
+  const custom = import.meta.env.VITE_ICE_SERVERS;
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as RTCIceServer[];
+    } catch {
+      console.warn('VITE_ICE_SERVERS is not valid JSON, ignoring it.');
+    }
   }
-  const view = new DataView(buffer);
-  const headerLength = view.getUint32(4, false);
-  if (buffer.byteLength < 8 + headerLength) return null;
 
-  try {
-    const headerBytes = bytes.subarray(8, 8 + headerLength);
-    const headerStr = new TextDecoder().decode(headerBytes);
-    const header = JSON.parse(headerStr) as ChunkHeader;
-    const data = buffer.slice(8 + headerLength);
-    return { header, data };
-  } catch (err) {
-    console.error('[WebRTC] Failed to decode framed chunk:', err);
-    return null;
+  const servers: RTCIceServer[] = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ];
+
+  const turnUrl = import.meta.env.VITE_TURN_URL;
+  if (turnUrl) {
+    servers.push({
+      urls: turnUrl.split(',').map((u: string) => u.trim()).filter(Boolean),
+      username: import.meta.env.VITE_TURN_USERNAME,
+      credential: import.meta.env.VITE_TURN_CREDENTIAL,
+    });
+  } else {
+    servers.push({
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    });
   }
+  return servers;
 }
 
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i += 8192) {
-    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, Math.min(i + 8192, len))));
-  }
-  return btoa(binary);
+/**
+ * Where the signaling WebSocket lives. Priority:
+ *   1. VITE_SIGNALING_URL                       (explicit ws:// or wss:// URL)
+ *   2. VITE_API_BASE_URL (http->ws, https->wss)  (your deployed Spring Boot backend)
+ *   3. same origin /ws/signaling                 (Vite dev proxy or the nginx container)
+ * Note: Vercel cannot host or proxy WebSockets, so a Vercel build MUST set #1 or #2.
+ */
+export function resolveSignalingUrl(): string {
+  const explicit = import.meta.env.VITE_SIGNALING_URL;
+  if (explicit) return explicit;
+
+  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+  if (base) return base.replace(/^http/, 'ws') + '/ws/signaling';
+
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/signaling`;
 }
 
-export function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-interface PeerNegotiationState {
-  makingOffer: boolean;
-  ignoreOffer: boolean;
-  isSettingRemoteAnswerPending: boolean;
-}
+const PING_INTERVAL_MS = 25_000; // keeps idle WebSockets alive through proxies/tunnels (often 60s)
+const MAX_RELINK_ATTEMPTS = 5;
 
 export class WebRtcEngine {
   private ws: WebSocket | null = null;
-  private bc: BroadcastChannel | null = null;
+  private wsUrl = '';
+  private closedByUser = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+
   private peerConnections = new Map<string, RTCPeerConnection>();
-  private dataChannels = new Map<string, RTCDataChannel>();
+  private dataChannels = new Map<string, RTCDataChannel>(); // open channels only
+  private linkStates = new Map<string, LinkState>();
+  private roomPeers = new Map<string, PeerInfo>();
+  private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
+  private relinkAttempts = new Map<string, number>();
+  private relinkTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // WebSocket messages are handled strictly one after another. Handlers are async, and without
+  // this an ICE candidate could be processed while setRemoteDescription() was still pending,
+  // making addIceCandidate() throw and silently dropping the candidate.
+  private signalQueue: Promise<void> = Promise.resolve();
+
   private callbacks: WebRtcEventCallback = {};
-  private pendingHeaders = new Map<string, ChunkHeader>();
-  private knownPeers = new Map<string, PeerInfo>();
-  private iceCandidateQueues = new Map<string, RTCIceCandidateInit[]>();
-  private seenMessageIds = new Set<string>();
-  private localTransferRegistry = new Map<string, string>(); // transferCode -> senderPeerId
-  private peerStates = new Map<string, PeerNegotiationState>();
-  private isExplicitlyClosed = false;
+  private readonly iceServers = buildIceServers();
 
   public readonly peerId: string;
   public peerName: string;
+  /** Signaling room. (Named workspaceId because that's the field the backend protocol uses.) */
   public currentWorkspaceId: string | null = null;
+  public lastError: string | null = null;
 
   constructor(peerName = 'Peer') {
-    this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
+    this.peerId = 'peer_' + Math.random().toString(36).substring(2, 12);
     this.peerName = peerName;
-  }
-
-  public getKnownPeers(): PeerInfo[] {
-    return Array.from(this.knownPeers.values());
   }
 
   public setCallbacks(cbs: WebRtcEventCallback) {
     this.callbacks = { ...this.callbacks, ...cbs };
   }
 
-  public connect(workspaceId: string, serverUrl?: string) {
-    this.currentWorkspaceId = workspaceId;
-    this.isExplicitlyClosed = false;
+  public get signalingUrl(): string {
+    return this.wsUrl;
+  }
 
-    // 1. Initialize BroadcastChannel mesh for instant zero-config cross-tab & local P2P
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        if (this.bc) {
-          this.bc.close();
-        }
-        this.bc = new BroadcastChannel('hyperx_mesh_' + workspaceId);
-        this.bc.onmessage = async (event) => {
-          const msg = event.data;
-          if (!msg || typeof msg !== 'object') return;
-          if (msg.senderPeerId === this.peerId || msg.peerId === this.peerId) return;
+  /* ------------------------------------------------------------ lifecycle */
 
-          // Message deduplication
-          if (msg.msgId) {
-            if (this.seenMessageIds.has(msg.msgId)) return;
-            this.seenMessageIds.add(msg.msgId);
-            if (this.seenMessageIds.size > 500) {
-              const first = this.seenMessageIds.values().next().value;
-              if (first) this.seenMessageIds.delete(first);
-            }
-          }
-
-          await this.handleSignalingMessage(msg);
-        };
-
-        // Broadcast presence announcement to any existing tabs/peers
-        setTimeout(() => {
-          this.sendWs({
-            type: 'peer-ping',
-            workspaceId,
-            peerId: this.peerId,
-            peerName: this.peerName,
-          });
-        }, 150);
-
-        this.callbacks.onConnectionStatus?.('CONNECTED');
-      } catch (err) {
-        console.warn('BroadcastChannel initialization error:', err);
-      }
-    }
-
-    // 2. Resolve WebSocket URL (from custom setting, apiBase, or localhost/LAN)
-    let wsUrl = serverUrl;
-    if (!wsUrl) {
-      const apiBase = getApiBase();
-      if (apiBase) {
-        const cleanBase = apiBase.replace(/^http/, 'ws');
-        wsUrl = `${cleanBase}/ws/signaling`;
-      } else if (typeof window !== 'undefined') {
-        const host = window.location.hostname;
-        if (host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) {
-          wsUrl = `ws://${host}:8080/ws/signaling`;
-        }
-      }
-    }
-
-    if (!wsUrl) {
-      // Running standalone/serverless on Vercel without a configured backend:
-      // Local BroadcastChannel mesh is active and ready
-      this.callbacks.onConnectionStatus?.('CONNECTED');
-      return;
-    }
-
-    // Attach JWT authentication query parameter if token exists
-    const token = getStoredToken();
-    if (token) {
-      const separator = wsUrl.includes('?') ? '&' : '?';
-      wsUrl += `${separator}token=${encodeURIComponent(token)}`;
-    }
-
-    try {
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
-        this.callbacks.onConnectionStatus?.('CONNECTED');
-        this.sendWs({
-          type: 'join',
-          workspaceId,
-          peerId: this.peerId,
-          peerName: this.peerName,
-          token: token || undefined,
-        });
-      };
-
-      this.ws.onmessage = async (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.msgId) {
-            if (this.seenMessageIds.has(msg.msgId)) return;
-            this.seenMessageIds.add(msg.msgId);
-            if (this.seenMessageIds.size > 500) {
-              const first = this.seenMessageIds.values().next().value;
-              if (first) this.seenMessageIds.delete(first);
-            }
-          }
-          await this.handleSignalingMessage(msg);
-        } catch (e) {
-          console.error('Failed to parse signaling message:', e);
-        }
-      };
-
-      this.ws.onclose = () => {
-        this.callbacks.onConnectionStatus?.('DISCONNECTED');
-        if (this.currentWorkspaceId && !this.isExplicitlyClosed) {
-          setTimeout(() => {
-            if (this.currentWorkspaceId && !this.isExplicitlyClosed) {
-              console.log('[WebRTC] Auto-reconnecting to signaling mesh...');
-              this.connect(this.currentWorkspaceId);
-            }
-          }, 3000);
-        }
-      };
-
-      this.ws.onerror = (err) => {
-        console.warn('[WebRTC] WebSocket error:', err);
-      };
-    } catch {
-      this.callbacks.onConnectionStatus?.('DISCONNECTED');
-    }
+  public connect(roomId: string, serverUrl?: string) {
+    this.currentWorkspaceId = roomId;
+    this.wsUrl = serverUrl || resolveSignalingUrl();
+    this.closedByUser = false;
+    this.openSocket();
   }
 
   public disconnect() {
-    this.isExplicitlyClosed = true;
+    this.closedByUser = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.stopPing();
+    this.relinkTimers.forEach((t) => clearTimeout(t));
+    this.relinkTimers.clear();
+
     if (this.ws) {
+      // Detach handlers first: a late onclose from a socket we've abandoned used to flip the UI
+      // to DISCONNECTED even though a newer engine/socket was already connected.
+      this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null;
       this.ws.close();
       this.ws = null;
     }
-    if (this.bc) {
-      this.bc.close();
-      this.bc = null;
-    }
-    this.peerConnections.forEach(pc => pc.close());
-    this.peerConnections.clear();
-    this.dataChannels.clear();
-    this.pendingHeaders.clear();
-    this.peerStates.clear();
-    this.iceCandidateQueues.clear();
+    for (const id of [...this.peerConnections.keys()]) this.closePeer(id);
+    this.roomPeers.clear();
+    this.pendingCandidates.clear();
   }
 
-  public sendChat(text: string) {
-    const msg = {
-      id: Math.random().toString(36).substring(2, 9),
-      senderPeerId: this.peerId,
-      senderName: this.peerName,
-      text,
-      timestamp: Date.now(),
+  private setStatus(status: SignalingStatus) {
+    this.callbacks.onConnectionStatus?.(status);
+  }
+
+  private openSocket() {
+    if (this.closedByUser) return;
+    this.setStatus('CONNECTING');
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.wsUrl);
+    } catch {
+      this.lastError = `Invalid signaling URL: ${this.wsUrl}`;
+      this.setStatus('DISCONNECTED');
+      this.scheduleReconnect();
+      return;
+    }
+    this.ws = ws;
+
+    ws.onopen = () => {
+      if (this.ws !== ws) return;
+      this.reconnectAttempt = 0;
+      this.lastError = null;
+      this.setStatus('CONNECTED');
+      this.sendWs({
+        type: 'join',
+        workspaceId: this.currentWorkspaceId,
+        peerId: this.peerId,
+        peerName: this.peerName,
+      });
+      this.startPing();
     };
 
-    this.callbacks.onChatMessage?.(msg);
-
-    this.sendWs({
-      type: 'chat',
-      workspaceId: this.currentWorkspaceId,
-      ...msg,
-    });
-  }
-
-  // --- Point-to-Point Transfer Session Protocol ---
-
-  public announceTransfer(transferId: string, manifest: FileManifest) {
-    const code = transferId.toUpperCase().trim();
-    this.localTransferRegistry.set(code, this.peerId);
-    this.sendWs({
-      type: 'transfer-announce',
-      workspaceId: this.currentWorkspaceId,
-      transferId: code,
-      senderPeerId: this.peerId,
-      manifest: {
-        ...manifest,
-        senderPeerId: this.peerId,
-        senderName: this.peerName,
-      },
-    });
-  }
-
-  public requestTransfer(transferId: string) {
-    const code = transferId.toUpperCase().trim();
-    const knownSender = this.localTransferRegistry.get(code);
-    this.sendWs({
-      type: 'transfer-request',
-      workspaceId: this.currentWorkspaceId,
-      transferId: code,
-      targetPeerId: knownSender,
-      senderPeerId: this.peerId,
-      senderName: this.peerName,
-    });
-  }
-
-  public acceptTransfer(transferId: string, receiverPeerId: string, manifest: FileManifest) {
-    this.sendWs({
-      type: 'transfer-accept',
-      workspaceId: this.currentWorkspaceId,
-      transferId,
-      targetPeerId: receiverPeerId,
-      senderPeerId: this.peerId,
-      manifest: {
-        ...manifest,
-        senderPeerId: this.peerId,
-        senderName: this.peerName,
-      },
-    });
-  }
-
-  public syncBitmask(transferId: string, targetPeerId: string, completedChunks: number[]) {
-    this.sendWs({
-      type: 'bitmask-sync',
-      workspaceId: this.currentWorkspaceId,
-      transferId,
-      targetPeerId,
-      senderPeerId: this.peerId,
-      completedChunks,
-    });
-  }
-
-  public sendChunkAck(transferId: string, targetPeerId: string, chunkIndex: number) {
-    const channel = this.dataChannels.get(targetPeerId);
-    if (channel && channel.readyState === 'open') {
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
+      let msg: Record<string, unknown>;
       try {
-        channel.send(JSON.stringify({ type: 'transfer-ack', transferId, chunkIndex }));
+        msg = JSON.parse(event.data);
+      } catch (e) {
+        console.error('Failed to parse signaling message:', e);
         return;
-      } catch {
-        // Fall back to signaling
       }
-    }
-    this.sendWs({
-      type: 'transfer-ack',
-      workspaceId: this.currentWorkspaceId,
-      targetPeerId,
-      senderPeerId: this.peerId,
-      transferId,
-      chunkIndex,
-    });
+      this.signalQueue = this.signalQueue
+        .then(() => this.handleSignalingMessage(msg))
+        .catch((e) => console.error('Signaling handler failed:', e));
+    };
+
+    ws.onerror = () => {
+      if (this.ws !== ws) return;
+      this.lastError = `Cannot reach the signaling server at ${this.wsUrl}`;
+    };
+
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      this.stopPing();
+      if (this.closedByUser) return;
+      this.setStatus('DISCONNECTED');
+      this.scheduleReconnect();
+    };
   }
 
-  public sendTransferComplete(transferId: string, targetPeerId: string) {
-    const channel = this.dataChannels.get(targetPeerId);
-    if (channel && channel.readyState === 'open') {
-      try {
-        channel.send(JSON.stringify({ type: 'transfer-complete', transferId }));
-        return;
-      } catch {
-        // Fall back to signaling
-      }
-    }
-    this.sendWs({
-      type: 'transfer-complete',
-      workspaceId: this.currentWorkspaceId,
-      targetPeerId,
-      senderPeerId: this.peerId,
-      transferId,
-    });
+  private scheduleReconnect() {
+    if (this.closedByUser || this.reconnectTimer) return;
+    const delay = Math.min(10_000, 1000 * 2 ** this.reconnectAttempt) + Math.random() * 300;
+    this.reconnectAttempt++;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openSocket();
+    }, delay);
   }
 
-  private getPeerState(peerId: string): PeerNegotiationState {
-    let state = this.peerStates.get(peerId);
-    if (!state) {
-      state = { makingOffer: false, ignoreOffer: false, isSettingRemoteAnswerPending: false };
-      this.peerStates.set(peerId, state);
-    }
-    return state;
+  private startPing() {
+    this.stopPing();
+    this.pingTimer = setInterval(() => this.sendWs({ type: 'ping' }), PING_INTERVAL_MS);
   }
 
-  /**
-   * Ensure an open WebRTC DataChannel exists to the target peer.
-   * If not yet connected, initiates a call and awaits the 'open' state.
-   */
-  public async ensureDataChannel(targetPeerId: string, timeoutMs = 6000): Promise<RTCDataChannel> {
-    const existing = this.dataChannels.get(targetPeerId);
-    if (existing && existing.readyState === 'open') {
-      return existing;
-    }
-
-    const pc = this.peerConnections.get(targetPeerId);
-    if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-      await this.initiateCall(targetPeerId);
-    } else if (pc.signalingState === 'stable') {
-      const channel = this.dataChannels.get(targetPeerId);
-      if (!channel || channel.readyState === 'closed') {
-        const newCh = pc.createDataChannel('hyperx-channel', { ordered: true });
-        this.setupDataChannel(targetPeerId, newCh);
-        await this.initiateCall(targetPeerId);
-      }
-    }
-
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      const ch = this.dataChannels.get(targetPeerId);
-      if (ch && ch.readyState === 'open') {
-        return ch;
-      }
-      await new Promise((r) => setTimeout(r, 60));
-    }
-
-    throw new Error(`WebRTC DataChannel to peer ${targetPeerId} did not open within ${timeoutMs}ms.`);
+  private stopPing() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 
-  /**
-   * Point-to-Point Chunk Delivery with Real WebRTC Backpressure and Seamless Signaling Relay Fallback.
-   * Delivers chunk strictly to targetPeerId. Uses framed binary DataChannel by default,
-   * with automatic, lossless fallback to WebSocket / Local mesh relay if DataChannel is unavailable.
-   */
-  public async sendChunkToPeer(
-    targetPeerId: string,
-    header: ChunkHeader,
-    buffer: ArrayBuffer
-  ): Promise<boolean> {
-    const framed = encodeFramedChunk(header, buffer);
-
-    // 1. Direct WebRTC DataChannel (Primary P2P path)
-    let channel = this.dataChannels.get(targetPeerId);
-    if (!channel || channel.readyState !== 'open') {
-      try {
-        channel = await this.ensureDataChannel(targetPeerId, 2500);
-      } catch {
-        channel = undefined;
-      }
+  private sendWs(msg: unknown) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
     }
+  }
 
-    if (channel && channel.readyState === 'open') {
-      try {
-        if (channel.bufferedAmount > HIGH_WATERMARK) {
-          await waitForBufferDrain(channel);
-        }
-        channel.send(framed);
-        return true;
-      } catch (err) {
-        console.warn(`[WebRTC] Direct DataChannel send error to ${targetPeerId}, using relay fallback:`, err);
-      }
-    }
+  /* -------------------------------------------------------- public helpers */
 
-    // 2. Seamless Signaling / Local Mesh Relay Fallback
+  public getPeers(): PeerInfo[] {
+    return Array.from(this.roomPeers.values());
+  }
+
+  public getPeerName(peerId: string): string {
+    return this.roomPeers.get(peerId)?.peerName || 'Peer';
+  }
+
+  public getOpenPeerIds(): string[] {
+    return Array.from(this.dataChannels.keys());
+  }
+
+  public getChannel(peerId: string): RTCDataChannel | undefined {
+    const ch = this.dataChannels.get(peerId);
+    return ch && ch.readyState === 'open' ? ch : undefined;
+  }
+
+  /** Send a JSON control message to one peer. Returns false if there is no open channel. */
+  public sendControl(peerId: string, msg: ControlMessage): boolean {
+    const ch = this.getChannel(peerId);
+    if (!ch) return false;
     try {
-      const base64Data = arrayBufferToBase64(buffer);
-      this.sendWs({
-        type: 'transfer-chunk',
-        workspaceId: this.currentWorkspaceId,
-        targetPeerId,
-        senderPeerId: this.peerId,
-        fileId: header.fileId,
-        transferId: header.transferId,
-        chunkIndex: header.chunkIndex,
-        totalChunks: header.totalChunks,
-        isEncrypted: header.isEncrypted,
-        iv: header.iv,
-        dataBase64: base64Data,
-      });
+      ch.send(JSON.stringify(msg));
       return true;
-    } catch (relayErr) {
-      console.error(`[WebRTC] Relay send failed to peer ${targetPeerId}:`, relayErr);
+    } catch (err) {
+      console.error('Failed to send control message:', err);
       return false;
     }
   }
 
-  public getDataChannel(peerId: string): RTCDataChannel | undefined {
-    return this.dataChannels.get(peerId);
+  public broadcastControl(msg: ControlMessage): number {
+    let sent = 0;
+    for (const id of this.getOpenPeerIds()) if (this.sendControl(id, msg)) sent++;
+    return sent;
   }
 
-  public getAllDataChannels(): RTCDataChannel[] {
-    return Array.from(this.dataChannels.values());
+  public sendChat(text: string) {
+    if (!this.currentWorkspaceId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      // Local echo fallback
+      this.callbacks.onChatMessage?.({
+        id: Math.random().toString(36).substring(2, 9),
+        senderPeerId: this.peerId,
+        senderName: this.peerName,
+        text,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    this.sendWs({
+      type: 'chat',
+      workspaceId: this.currentWorkspaceId,
+      senderPeerId: this.peerId,
+      senderName: this.peerName,
+      text,
+      timestamp: Date.now(),
+    });
   }
 
-  private sendWs(msg: Record<string, unknown>) {
-    if (!msg.msgId) {
-      msg.msgId = Math.random().toString(36).substring(2, 9) + Date.now();
-    }
-    this.seenMessageIds.add(msg.msgId as string);
+  /* ----------------------------------------------------- signaling handlers */
 
-    // 1. Broadcast via local BroadcastChannel mesh
-    if (this.bc) {
-      try {
-        this.bc.postMessage(msg);
-      } catch (e) {
-        console.warn('BroadcastChannel postMessage error:', e);
-      }
-    }
+  private emitPeers() {
+    this.callbacks.onPeersUpdated?.(this.getPeers());
+  }
 
-    // 2. Broadcast via WebSocket if open
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+  private emitLinks() {
+    this.callbacks.onLinksChanged?.(Object.fromEntries(this.linkStates));
+  }
+
+  private setLink(peerId: string, state: LinkState | null) {
+    if (state === null) {
+      if (!this.linkStates.delete(peerId)) return;
+    } else {
+      if (this.linkStates.get(peerId) === state) return;
+      this.linkStates.set(peerId, state);
     }
+    this.emitLinks();
   }
 
   private async handleSignalingMessage(msg: Record<string, unknown>) {
     const type = msg.type as string;
 
     switch (type) {
-      case 'error': {
-        this.callbacks.onError?.({
-          message: (msg.message as string) || 'Signaling error',
-          code: msg.code as string,
-        });
-        break;
-      }
-      case 'transfer-registered': {
-        this.callbacks.onTransferRegistered?.({
-          transferId: (msg.transferId as string) || '',
-          status: (msg.status as string) || 'REGISTERED',
-        });
-        break;
-      }
-      case 'peer-ping': {
-        const peerId = msg.peerId as string;
-        const peerName = (msg.peerName as string) || 'Peer';
-        if (peerId && peerId !== this.peerId) {
-          this.knownPeers.set(peerId, { peerId, peerName });
-          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
-          this.sendWs({
-            type: 'peer-pong',
-            workspaceId: this.currentWorkspaceId,
-            targetPeerId: peerId,
-            peerId: this.peerId,
-            peerName: this.peerName,
-          });
-        }
-        break;
-      }
-      case 'peer-pong': {
-        const targetPeerId = msg.targetPeerId as string;
-        const peerId = msg.peerId as string;
-        const peerName = (msg.peerName as string) || 'Peer';
-        if (targetPeerId === this.peerId && peerId && peerId !== this.peerId) {
-          this.knownPeers.set(peerId, { peerId, peerName });
-          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
-          await this.initiateCall(peerId);
-        }
-        break;
-      }
       case 'peers': {
         const peers = (msg.peers as PeerInfo[]) || [];
-        this.knownPeers.clear();
-        for (const p of peers) {
-          this.knownPeers.set(p.peerId, p);
-        }
-        this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+        const listed = new Set(peers.map((p) => p.peerId));
+        // Anyone we were linked to who is no longer in the room is gone.
+        for (const id of [...this.peerConnections.keys()]) if (!listed.has(id)) this.closePeer(id);
+        this.roomPeers = new Map(peers.map((p) => [p.peerId, p]));
+        this.emitPeers();
+        // We are the newcomer (or just reconnected): we call everyone already here. Any older
+        // link to these peers is stale (the server told them we left), so initiateCall replaces it.
         for (const peer of peers) {
           await this.initiateCall(peer.peerId);
         }
@@ -603,45 +372,29 @@ export class WebRtcEngine {
       }
       case 'peer-joined': {
         const peerId = msg.peerId as string;
-        const peerName = (msg.peerName as string) || 'Peer';
-        if (peerId && peerId !== this.peerId) {
-          this.knownPeers.set(peerId, { peerId, peerName });
-          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
+        if (peerId) {
+          this.roomPeers.set(peerId, { peerId, peerName: (msg.peerName as string) || 'Peer' });
+          this.emitPeers();
+          // The newcomer will send us an offer; nothing to do until it arrives.
         }
         break;
       }
       case 'peer-left': {
         const peerId = msg.peerId as string;
-        if (peerId) {
-          this.knownPeers.delete(peerId);
-          this.callbacks.onPeersUpdated?.(Array.from(this.knownPeers.values()));
-          const pc = this.peerConnections.get(peerId);
-          if (pc) {
-            pc.close();
-            this.peerConnections.delete(peerId);
-            this.dataChannels.delete(peerId);
-            this.pendingHeaders.delete(peerId);
-            this.peerStates.delete(peerId);
-            this.iceCandidateQueues.delete(peerId);
-          }
-        }
+        this.roomPeers.delete(peerId);
+        this.closePeer(peerId);
+        this.emitPeers();
         break;
       }
-      case 'offer': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
+      case 'offer':
         await this.handleOffer(msg.senderPeerId as string, msg.sdp as RTCSessionDescriptionInit);
         break;
-      }
-      case 'answer': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
+      case 'answer':
         await this.handleAnswer(msg.senderPeerId as string, msg.sdp as RTCSessionDescriptionInit);
         break;
-      }
-      case 'ice-candidate': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        await this.handleIceCandidate(msg.senderPeerId as string, msg.candidate as RTCIceCandidateInit);
+      case 'ice-candidate':
+        await this.handleIceCandidate(msg.senderPeerId as string, msg.candidate as RTCIceCandidateInit | null);
         break;
-      }
       case 'chat': {
         this.callbacks.onChatMessage?.({
           id: Math.random().toString(36).substring(2, 9),
@@ -652,379 +405,207 @@ export class WebRtcEngine {
         });
         break;
       }
-      case 'transfer-announce': {
-        const transferId = (msg.transferId as string || '').toUpperCase().trim();
-        const sender = (msg.senderPeerId as string) || (msg.manifest as Record<string, unknown>)?.senderPeerId as string;
-        if (transferId && sender) {
-          this.localTransferRegistry.set(transferId, sender);
-        }
+      case 'pong':
         break;
-      }
-      case 'transfer-request': {
-        const transferId = (msg.transferId as string || '').toUpperCase().trim();
-        const targetSender = (msg.targetPeerId as string) || this.localTransferRegistry.get(transferId);
-        // Respond if this peer is the target sender or if transferId was registered on this instance
-        if (targetSender === this.peerId || this.localTransferRegistry.get(transferId) === this.peerId || this.localTransferRegistry.has(transferId)) {
-          this.callbacks.onTransferRequested?.({
-            transferId: msg.transferId as string,
-            receiverPeerId: msg.senderPeerId as string,
-            receiverPeerName: (msg.senderName as string) || 'Peer',
-          });
-        }
-        break;
-      }
-      case 'transfer-accept': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        this.callbacks.onTransferAccepted?.({
-          transferId: msg.transferId as string,
-          senderPeerId: msg.senderPeerId as string,
-          manifest: msg.manifest as FileManifest,
-        });
-        break;
-      }
-      case 'bitmask-sync': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        this.callbacks.onBitmaskSynced?.({
-          transferId: msg.transferId as string,
-          senderPeerId: msg.senderPeerId as string,
-          completedChunks: (msg.completedChunks as number[]) || [],
-        });
-        break;
-      }
-      case 'transfer-chunk': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        const base64 = msg.dataBase64 as string;
-        if (!base64) return;
-        try {
-          const chunkData = base64ToArrayBuffer(base64);
-          this.callbacks.onChunkReceived?.({
-            fileId: msg.fileId as string,
-            transferId: msg.transferId as string,
-            chunkIndex: msg.chunkIndex as number,
-            totalChunks: msg.totalChunks as number,
-            isEncrypted: Boolean(msg.isEncrypted),
-            iv: msg.iv as number[],
-            data: chunkData,
-            senderPeerId: msg.senderPeerId as string,
-          });
-        } catch (e) {
-          console.error('[WebRTC] Failed to decode relayed transfer-chunk:', e);
-        }
-        break;
-      }
-      case 'transfer-ack': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        this.callbacks.onChunkAck?.({
-          transferId: msg.transferId as string,
-          chunkIndex: msg.chunkIndex as number,
-          senderPeerId: msg.senderPeerId as string,
-        });
-        this.callbacks.onBitmaskSynced?.({
-          transferId: msg.transferId as string,
-          senderPeerId: msg.senderPeerId as string,
-          completedChunks: [msg.chunkIndex as number],
-        });
-        break;
-      }
-      case 'transfer-complete': {
-        if (msg.targetPeerId && msg.targetPeerId !== this.peerId) return;
-        this.callbacks.onTransferComplete?.({
-          transferId: msg.transferId as string,
-          senderPeerId: msg.senderPeerId as string,
-        });
-        break;
-      }
     }
   }
 
-  // STUN + Enterprise OpenRelay TURN configuration for guaranteed direct NAT traversal across all networks
-  private createPeerConnection(targetPeerId: string): RTCPeerConnection {
-    const existing = this.peerConnections.get(targetPeerId);
-    if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
-      return existing;
-    }
-    if (existing) {
-      existing.close();
-      this.peerConnections.delete(targetPeerId);
-    }
+  /* ----------------------------------------------------------- peer links */
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-        {
-          urls: [
-            'turn:openrelay.metered.ca:80',
-            'turn:openrelay.metered.ca:443',
-            'turn:openrelay.metered.ca:443?transport=tcp',
-          ],
-          username: 'openrelay',
-          credential: 'openrelay',
-        },
-      ],
-      iceCandidatePoolSize: 8,
-    });
+  private createPeerConnection(targetPeerId: string): RTCPeerConnection {
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        const candidatePayload = event.candidate.toJSON ? event.candidate.toJSON() : event.candidate;
         this.sendWs({
           type: 'ice-candidate',
           workspaceId: this.currentWorkspaceId,
           targetPeerId,
           senderPeerId: this.peerId,
-          candidate: candidatePayload,
+          candidate: event.candidate.toJSON(),
         });
       }
     };
 
-    pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Peer ${targetPeerId} connection state:`, pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        this.dataChannels.delete(targetPeerId);
-        this.pendingHeaders.delete(targetPeerId);
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      console.log(`[WebRTC] Peer ${targetPeerId} ICE connection state:`, pc.iceConnectionState);
-    };
-
     pc.ondatachannel = (event) => {
-      console.log(`[WebRTC] Received incoming DataChannel from peer ${targetPeerId}`);
-      this.setupDataChannel(targetPeerId, event.channel);
+      this.setupDataChannel(targetPeerId, pc, event.channel);
+    };
+
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    pc.onconnectionstatechange = () => {
+      if (this.peerConnections.get(targetPeerId) !== pc) return;
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+      }
+      const state = pc.connectionState;
+      if (state === 'failed' || state === 'closed') {
+        this.handleLinkDown(targetPeerId, pc);
+      } else if (state === 'disconnected') {
+        // Often self-heals within seconds (Wi-Fi roam); only give up if it doesn't.
+        disconnectTimer = setTimeout(() => {
+          if (pc.connectionState === 'disconnected') this.handleLinkDown(targetPeerId, pc);
+        }, 8000);
+      }
     };
 
     this.peerConnections.set(targetPeerId, pc);
+    this.setLink(targetPeerId, 'connecting');
     return pc;
   }
 
-  private setupDataChannel(targetPeerId: string, channel: RTCDataChannel) {
+  private setupDataChannel(targetPeerId: string, pc: RTCPeerConnection, channel: RTCDataChannel) {
     channel.binaryType = 'arraybuffer';
-    this.dataChannels.set(targetPeerId, channel);
+    channel.bufferedAmountLowThreshold = LOW_WATERMARK;
 
-    const notifyReady = () => {
-      console.log(`[WebRTC] DataChannel to peer ${targetPeerId} is OPEN`);
+    channel.onopen = () => {
+      if (this.peerConnections.get(targetPeerId) !== pc) return;
       this.dataChannels.set(targetPeerId, channel);
-      this.callbacks.onDataChannelReady?.(targetPeerId, channel);
+      this.relinkAttempts.delete(targetPeerId);
+      this.setLink(targetPeerId, 'open');
+      this.callbacks.onLinkOpen?.(targetPeerId);
     };
 
-    if (channel.readyState === 'open') {
-      notifyReady();
-    } else {
-      channel.onopen = notifyReady;
-    }
-
     channel.onclose = () => {
-      console.log(`[WebRTC] DataChannel to peer ${targetPeerId} closed`);
-      this.dataChannels.delete(targetPeerId);
-      this.pendingHeaders.delete(targetPeerId);
+      if (this.dataChannels.get(targetPeerId) === channel) {
+        this.dataChannels.delete(targetPeerId);
+        this.callbacks.onLinkClosed?.(targetPeerId);
+        this.handleLinkDown(targetPeerId, pc);
+      }
     };
 
     channel.onerror = (err) => {
-      console.error(`[WebRTC] DataChannel error with peer ${targetPeerId}:`, err);
+      console.error(`DataChannel error with peer ${targetPeerId}:`, err);
     };
 
-    channel.onmessage = async (event) => {
-      let arrayBuf: ArrayBuffer | null = null;
-      if (event.data instanceof ArrayBuffer) {
-        arrayBuf = event.data;
-      } else if (event.data instanceof Blob) {
-        arrayBuf = await event.data.arrayBuffer();
-      }
-
-      if (arrayBuf) {
-        // Attempt atomic framed decode
-        const decoded = decodeFramedChunk(arrayBuf);
-        if (decoded) {
-          this.callbacks.onChunkReceived?.({
-            fileId: decoded.header.fileId,
-            transferId: decoded.header.transferId,
-            chunkIndex: decoded.header.chunkIndex,
-            totalChunks: decoded.header.totalChunks,
-            isEncrypted: decoded.header.isEncrypted,
-            iv: decoded.header.iv,
-            data: decoded.data,
-            senderPeerId: targetPeerId,
-          });
-          return;
-        }
-
-        // Legacy header fallback
-        const header = this.pendingHeaders.get(targetPeerId);
-        if (header) {
-          this.callbacks.onChunkReceived?.({
-            fileId: header.fileId,
-            transferId: header.transferId,
-            chunkIndex: header.chunkIndex,
-            totalChunks: header.totalChunks,
-            isEncrypted: header.isEncrypted,
-            iv: header.iv,
-            data: arrayBuf,
-            senderPeerId: targetPeerId,
-          });
-          this.pendingHeaders.delete(targetPeerId);
-          return;
-        }
-      }
-
+    channel.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {
-          const parsed = JSON.parse(event.data);
-          if (parsed.type === 'CHUNK') {
-            this.pendingHeaders.set(targetPeerId, parsed);
-          } else if (parsed.type === 'transfer-ack') {
-            this.callbacks.onChunkAck?.({
-              transferId: parsed.transferId,
-              chunkIndex: parsed.chunkIndex,
-              senderPeerId: targetPeerId,
-            });
-            this.callbacks.onBitmaskSynced?.({
-              transferId: parsed.transferId,
-              senderPeerId: targetPeerId,
-              completedChunks: [parsed.chunkIndex],
-            });
-          } else if (parsed.type === 'transfer-complete') {
-            this.callbacks.onTransferComplete?.({
-              transferId: parsed.transferId,
-              senderPeerId: targetPeerId,
-            });
-          }
+          const msg = JSON.parse(event.data) as ControlMessage;
+          this.callbacks.onControl?.(targetPeerId, msg);
         } catch (e) {
-          console.error('[WebRTC] Failed to parse DataChannel JSON message:', e);
+          console.error('Failed to parse control message:', e);
         }
+      } else if (event.data instanceof ArrayBuffer) {
+        this.callbacks.onFrame?.(targetPeerId, event.data);
       }
     };
+  }
+
+  /** Tear down one peer link completely (idempotent). */
+  private closePeer(peerId: string) {
+    const timer = this.relinkTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    this.relinkTimers.delete(peerId);
+    this.pendingCandidates.delete(peerId);
+
+    const channel = this.dataChannels.get(peerId);
+    this.dataChannels.delete(peerId);
+
+    const pc = this.peerConnections.get(peerId);
+    this.peerConnections.delete(peerId);
+    if (pc) {
+      pc.onicecandidate = pc.ondatachannel = pc.onconnectionstatechange = null;
+      pc.close();
+    }
+    if (channel) {
+      channel.onopen = channel.onclose = channel.onerror = channel.onmessage = null;
+      this.callbacks.onLinkClosed?.(peerId);
+    }
+    this.setLink(peerId, null);
+  }
+
+  /**
+   * A link died (ICE failed, channel closed, long disconnect). Drop it and, if the peer is still
+   * in the room, try to re-establish. Exactly one side retries (lower peerId) so the two peers
+   * don't send each other competing offers.
+   */
+  private handleLinkDown(peerId: string, pc: RTCPeerConnection) {
+    if (this.peerConnections.get(peerId) !== pc || this.closedByUser) return;
+    this.closePeer(peerId);
+
+    if (!this.roomPeers.has(peerId) || this.peerId > peerId) return;
+    const attempt = this.relinkAttempts.get(peerId) ?? 0;
+    if (attempt >= MAX_RELINK_ATTEMPTS) return;
+    this.relinkAttempts.set(peerId, attempt + 1);
+
+    const timer = setTimeout(() => {
+      this.relinkTimers.delete(peerId);
+      if (this.closedByUser || !this.roomPeers.has(peerId) || this.peerConnections.has(peerId)) return;
+      this.initiateCall(peerId).catch((e) => console.error('Re-link failed:', e));
+    }, 1500 * 2 ** attempt);
+    this.relinkTimers.set(peerId, timer);
   }
 
   private async initiateCall(targetPeerId: string) {
-    console.log(`[WebRTC] Initiating call to peer ${targetPeerId}...`);
+    this.closePeer(targetPeerId); // replace any stale link
     const pc = this.createPeerConnection(targetPeerId);
-    const pState = this.getPeerState(targetPeerId);
+    const channel = pc.createDataChannel('hyperx-channel', { ordered: true });
+    this.setupDataChannel(targetPeerId, pc, channel);
 
-    let channel = this.dataChannels.get(targetPeerId);
-    if (!channel || channel.readyState === 'closed') {
-      channel = pc.createDataChannel('hyperx-channel', { ordered: true });
-      this.setupDataChannel(targetPeerId, channel);
-    }
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
 
-    try {
-      pState.makingOffer = true;
-      const offer = await pc.createOffer();
-      if (pc.signalingState !== 'stable') return;
-      await pc.setLocalDescription(offer);
-
-      this.sendWs({
-        type: 'offer',
-        workspaceId: this.currentWorkspaceId,
-        targetPeerId,
-        senderPeerId: this.peerId,
-        sdp: pc.localDescription || offer,
-      });
-    } catch (err) {
-      console.warn(`[WebRTC] initiateCall error with peer ${targetPeerId}:`, err);
-    } finally {
-      pState.makingOffer = false;
-    }
+    this.sendWs({
+      type: 'offer',
+      workspaceId: this.currentWorkspaceId,
+      targetPeerId,
+      senderPeerId: this.peerId,
+      sdp: pc.localDescription,
+    });
   }
 
   private async handleOffer(senderPeerId: string, sdp: RTCSessionDescriptionInit) {
-    console.log(`[WebRTC] Handling offer from peer ${senderPeerId}...`);
+    this.closePeer(senderPeerId); // an offer always supersedes whatever we had
     const pc = this.createPeerConnection(senderPeerId);
-    const pState = this.getPeerState(senderPeerId);
-    const isPolite = this.peerId > senderPeerId;
+    await pc.setRemoteDescription(sdp);
+    await this.flushCandidates(senderPeerId, pc);
 
-    const offerCollision = pState.makingOffer || pc.signalingState !== 'stable';
-    pState.ignoreOffer = !isPolite && offerCollision;
-    if (pState.ignoreOffer) {
-      console.log(`[WebRTC] Impolite peer ${this.peerId} ignoring offer collision from ${senderPeerId}`);
-      return;
-    }
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
 
-    try {
-      if (offerCollision && isPolite) {
-        console.log(`[WebRTC] Polite peer ${this.peerId} rolling back local description for ${senderPeerId}`);
-        await pc.setLocalDescription({ type: 'rollback' });
-      }
-
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      await this.drainIceCandidates(senderPeerId);
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      this.sendWs({
-        type: 'answer',
-        workspaceId: this.currentWorkspaceId,
-        targetPeerId: senderPeerId,
-        senderPeerId: this.peerId,
-        sdp: pc.localDescription || answer,
-      });
-    } catch (err) {
-      console.error(`[WebRTC] Failed to handle offer from ${senderPeerId}:`, err);
-    }
+    this.sendWs({
+      type: 'answer',
+      workspaceId: this.currentWorkspaceId,
+      targetPeerId: senderPeerId,
+      senderPeerId: this.peerId,
+      sdp: pc.localDescription,
+    });
   }
 
   private async handleAnswer(senderPeerId: string, sdp: RTCSessionDescriptionInit) {
-    console.log(`[WebRTC] Handling answer from peer ${senderPeerId}...`);
     const pc = this.peerConnections.get(senderPeerId);
-    if (!pc) return;
-    const pState = this.getPeerState(senderPeerId);
-    if (pState.ignoreOffer) {
-      return;
-    }
-
-    try {
-      if (pc.signalingState === 'have-local-offer') {
-        pState.isSettingRemoteAnswerPending = true;
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        pState.isSettingRemoteAnswerPending = false;
-        await this.drainIceCandidates(senderPeerId);
-      }
-    } catch (err) {
-      console.error(`[WebRTC] Failed to set remote answer from ${senderPeerId}:`, err);
-    }
+    if (!pc || pc.signalingState !== 'have-local-offer') return;
+    await pc.setRemoteDescription(sdp);
+    await this.flushCandidates(senderPeerId, pc);
   }
 
-  private async handleIceCandidate(senderPeerId: string, candidate: RTCIceCandidateInit) {
-    if (!candidate || !candidate.candidate) return;
+  private async handleIceCandidate(senderPeerId: string, candidate: RTCIceCandidateInit | null) {
+    if (!candidate) return;
     const pc = this.peerConnections.get(senderPeerId);
     if (!pc || !pc.remoteDescription) {
-      const queue = this.iceCandidateQueues.get(senderPeerId) || [];
-      queue.push(candidate);
-      this.iceCandidateQueues.set(senderPeerId, queue);
+      // Remote description not applied yet: hold the candidate instead of failing.
+      const list = this.pendingCandidates.get(senderPeerId) ?? [];
+      list.push(candidate);
+      this.pendingCandidates.set(senderPeerId, list);
       return;
     }
     try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      await pc.addIceCandidate(candidate);
     } catch (e) {
-      const pState = this.getPeerState(senderPeerId);
-      if (!pState.ignoreOffer) {
-        console.warn('[WebRTC] Error adding ICE candidate:', e);
-      }
+      console.warn('addIceCandidate failed:', e);
     }
   }
 
-  private async drainIceCandidates(peerId: string) {
-    const pc = this.peerConnections.get(peerId);
-    if (!pc || !pc.remoteDescription) return;
-
-    const queued = this.iceCandidateQueues.get(peerId) || [];
-    if (queued.length > 0) {
-      this.iceCandidateQueues.delete(peerId);
-      for (const cand of queued) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand));
-        } catch (e) {
-          console.warn('[WebRTC] Error applying queued ICE candidate:', e);
-        }
+  private async flushCandidates(peerId: string, pc: RTCPeerConnection) {
+    const list = this.pendingCandidates.get(peerId);
+    this.pendingCandidates.delete(peerId);
+    for (const c of list ?? []) {
+      try {
+        await pc.addIceCandidate(c);
+      } catch (e) {
+        console.warn('addIceCandidate (buffered) failed:', e);
       }
     }
   }
 }
-

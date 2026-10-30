@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   UploadCloud,
   Lock,
@@ -9,117 +9,98 @@ import {
   HardDrive,
   Cpu,
   ShieldCheck,
-  Eye,
-  EyeOff,
+  Radio,
   Copy,
+  RefreshCw,
+  X,
   Check,
-  AlertTriangle,
-  KeyRound,
-  FileCheck,
-  Link2
 } from 'lucide-react';
-import {
-  deriveKeyFromSecret,
-  encryptChunk,
-  decryptChunk,
-  computeSha256,
-  computeManifestRootHash,
-  generateSecurePassphrase
-} from '../services/cryptoService';
-import { CHUNK_SIZE } from '../services/chunkEngine';
-import {
-  saveChunk,
-  saveTransferMetadata,
-  streamSaveFileToDisk,
-  assembleCompleteFile,
-  getChunk
-} from '../services/indexedDbCache';
+import { hasWebCrypto } from '../services/cryptoService';
+import { purgeStaleTransfers } from '../services/indexedDbCache';
 import { recordTransfer } from '../services/workspaceService';
-import { getApiBase } from '../services/authService';
-import {
-  WebRtcEngine,
-  IncomingChunkPayload
-} from '../services/webrtcEngine';
+import { WebRtcEngine, PeerInfo, LinkState, SignalingStatus } from '../services/webrtcEngine';
+import { TransferManager, LocalTransfer } from '../services/transferManager';
+import { parseRoomInput, buildInviteLink } from '../services/room';
 
-export interface LocalTransfer {
-  fileId: string;
-  transferId: string; // Point-to-Point transfer code
-  file?: File;
-  fileName: string;
-  fileSize: number;
-  totalChunks: number;
-  chunksCompleted: number;
-  percentage: number;
-  speedMBps: number;
-  status: 'PENDING_PEER' | 'STREAMING' | 'PAUSED' | 'COMPLETED' | 'CORRUPTED' | 'ERROR';
-  errorMessage?: string;
-  isEncrypted: boolean;
-  passphrase?: string;
-  chunksMap: boolean[];
-  manifestHash?: string;
-  direction: 'SEND' | 'RECEIVE';
-  targetPeerId?: string;
-  targetPeerName?: string;
-  downloadBlob?: Blob;
-}
+export type { LocalTransfer } from '../services/transferManager';
 
 interface TransferCenterProps {
+  /** Only set when signed in: completed deliveries are written to that workspace's audit trail. */
   workspaceId?: string;
-  webrtcEngine?: WebRtcEngine | null;
+  engine: WebRtcEngine | null;
+  roomId: string;
+  peers: PeerInfo[];
+  links: Record<string, LinkState>;
+  signalingStatus: SignalingStatus;
+  onJoinRoom: (roomId: string) => void;
+  onNewRoom: () => void;
   onMountControls?: (controls: { triggerFileSelect: () => void; promptReceiveCode: () => void }) => void;
 }
 
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const statusLabel = (t: LocalTransfer): string => {
+  const send = t.direction === 'SEND';
+  switch (t.status) {
+    case 'OFFERED':
+      return 'INCOMING OFFER';
+    case 'WAITING':
+      return 'WAITING FOR A RECEIVER';
+    case 'STREAMING':
+      return send ? 'SENDING' : 'RECEIVING';
+    case 'PAUSED':
+      return 'PAUSED';
+    case 'VERIFYING':
+      return send ? 'SENT - AWAITING CONFIRMATION' : 'VERIFYING';
+    case 'COMPLETED':
+      return send ? 'DELIVERED' : 'RECEIVED';
+    case 'ERROR':
+      return 'FAILED';
+  }
+};
+
+const linkColor = (state: LinkState | undefined) =>
+  state === 'open' ? 'var(--accent-green)' : state === 'connecting' ? 'var(--bauhaus-yellow)' : 'rgba(255,255,255,0.25)';
+
 export const TransferCenter: React.FC<TransferCenterProps> = ({
   workspaceId,
-  webrtcEngine,
+  engine,
+  roomId,
+  peers,
+  links,
+  signalingStatus,
+  onJoinRoom,
+  onNewRoom,
   onMountControls,
 }) => {
+  const secureCrypto = hasWebCrypto();
   const [transfers, setTransfers] = useState<LocalTransfer[]>([]);
-  const [encryptEnabled, setEncryptEnabled] = useState(false);
-  const [passphrase, setPassphrase] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [encryptEnabled, setEncryptEnabled] = useState(secureCrypto);
+  const [passphrase, setPassphrase] = useState('HyperX-ZeroRAM-Secret-2026');
+  const [autoAccept, setAutoAccept] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [receiveCodeInput, setReceiveCodeInput] = useState('');
-  const [receivePassphraseInput, setReceivePassphraseInput] = useState('');
-  const [showReceivePassphrase, setShowReceivePassphrase] = useState(false);
-  const [unlockPassphrases, setUnlockPassphrases] = useState<Record<string, string>>({});
   const [showReceiveModal, setShowReceiveModal] = useState(false);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState<string | null>(null);
-  const [receiveLoading, setReceiveLoading] = useState(false);
-  const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [uiError, setUiError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const managerRef = useRef<TransferManager | null>(null);
+  // The manager outlives renders, so it reads live values through refs instead of stale closures.
+  const passphraseRef = useRef(passphrase);
+  const autoAcceptRef = useRef(autoAccept);
+  const workspaceIdRef = useRef(workspaceId);
+  passphraseRef.current = passphrase;
+  autoAcceptRef.current = autoAccept;
+  workspaceIdRef.current = workspaceId;
 
-  // Synchronous transfer control refs to prevent React closure stale-state bugs
-  const transferControlsRef = useRef<Map<string, {
-    isPaused: boolean;
-    isCancelled: boolean;
-    acknowledgedChunks: Set<number>;
-    targetPeerId?: string;
-  }>>(new Map());
-
-  // In-memory chunk hashes for receiver integrity validation
-  const receivedChunkHashesRef = useRef<Map<string, string[]>>(new Map());
-
-  // In-memory speed calculation metrics for receiver
-  const receiverStatsRef = useRef<Map<string, { startTime: number; bytesReceived: number }>>(new Map());
-
-  // Ref to always access latest transfers inside WebRTC event callbacks without stale closures
-  const transfersRef = useRef<LocalTransfer[]>([]);
-  useEffect(() => {
-    transfersRef.current = transfers;
-  }, [transfers]);
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // Expose trigger handlers to parent (Hero action buttons)
+  // Expose trigger functions to parent (Hero SEND & RECEIVE buttons)
   useEffect(() => {
     if (onMountControls) {
       onMountControls({
@@ -127,723 +108,75 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         promptReceiveCode: () => setShowReceiveModal(true),
       });
     }
-
-    // Auto-detect invite transfer code from URL query: ?code=HX-XXXXXX
-    const params = new URLSearchParams(window.location.search);
-    const codeParam = params.get('code') || params.get('transfer');
-    if (codeParam) {
-      setReceiveCodeInput(codeParam.toUpperCase().trim());
-      setShowReceiveModal(true);
-    }
   }, [onMountControls]);
 
-  // Handle incoming chunks directly from target sender
-  const handleIncomingChunk = useCallback(async (payload: IncomingChunkPayload) => {
-    const { fileId, transferId, chunkIndex, totalChunks, isEncrypted, iv, data, senderPeerId } = payload;
-
-    const currentTransfer = transfersRef.current.find(
-      (t) => t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase())
-    );
-
-    const effectivePassphrase = currentTransfer?.passphrase || passphrase;
-    let plainBuffer = data;
-
-    if (isEncrypted && iv) {
-      if (!effectivePassphrase) {
-        // Save encrypted slice to IndexedDB so it is not dropped
-        await saveChunk(fileId, chunkIndex, data);
-        setTransfers((prev) =>
-          prev.map((t) =>
-            (t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase()))
-              ? {
-                  ...t,
-                  fileId,
-                  totalChunks,
-                  isEncrypted: true,
-                  status: 'PAUSED',
-                  errorMessage: 'Encrypted transfer: Enter passphrase below to decrypt slices.',
-                }
-              : t
-          )
-        );
-        return;
-      }
-
-      try {
-        const key = await deriveKeyFromSecret(effectivePassphrase);
-        plainBuffer = await decryptChunk(data, iv, key);
-      } catch (err) {
-        console.error(`Decryption failed on chunk #${chunkIndex}:`, err);
-        setTransfers((prev) =>
-          prev.map((t) =>
-            (t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase()))
-              ? {
-                  ...t,
-                  status: 'ERROR',
-                  errorMessage: `Decryption failed on slice #${chunkIndex}. Passphrase mismatch.`,
-                }
-              : t
-          )
-        );
-        return; // REJECT corrupted/undecryptable chunk
-      }
-    }
-
-    // Persist slice into IndexedDB to keep browser memory completely flat
-    await saveChunk(fileId, chunkIndex, plainBuffer);
-
-    // Compute chunk hash for progressive manifest integrity
-    const chunkHash = await computeSha256(plainBuffer);
-    let hashes = receivedChunkHashesRef.current.get(fileId);
-    if (!hashes || hashes.length !== totalChunks) {
-      hashes = new Array(totalChunks).fill('');
-      receivedChunkHashesRef.current.set(fileId, hashes);
-    }
-    hashes[chunkIndex] = chunkHash;
-
-    // Live receiver speed calculation
-    let stats = receiverStatsRef.current.get(fileId);
-    if (!stats) {
-      stats = { startTime: Date.now(), bytesReceived: 0 };
-      receiverStatsRef.current.set(fileId, stats);
-    }
-    stats.bytesReceived += plainBuffer.byteLength;
-    const elapsedSec = (Date.now() - stats.startTime) / 1000;
-    const speedMBps = elapsedSec > 0 ? parseFloat(((stats.bytesReceived / (1024 * 1024)) / elapsedSec).toFixed(2)) : 0;
-
-    // Send ACK back to sender so sender UI updates in real-time
-    const effectiveTransferId = transferId || currentTransfer?.transferId;
-    if (effectiveTransferId && senderPeerId && webrtcEngine) {
-      webrtcEngine.sendChunkAck(effectiveTransferId, senderPeerId, chunkIndex);
-    }
-
-    setTransfers((prev) =>
-      prev.map((t) => {
-        const isMatch = t.fileId === fileId || (Boolean(transferId) && t.transferId.toUpperCase() === transferId!.toUpperCase());
-        if (isMatch) {
-          const baseMap = t.chunksMap.length === totalChunks ? [...t.chunksMap] : new Array(totalChunks).fill(false);
-          baseMap[chunkIndex] = true;
-          const completed = baseMap.filter(Boolean).length;
-          const pct = Math.round((completed / totalChunks) * 100);
-          const isDone = completed >= totalChunks;
-
-          const updated: LocalTransfer = {
-            ...t,
-            fileId, // Adopt confirmed fileId if it was pending_
-            totalChunks,
-            chunksCompleted: completed,
-            percentage: pct,
-            speedMBps,
-            chunksMap: baseMap,
-            targetPeerId: senderPeerId,
-            status: isDone ? 'COMPLETED' : 'STREAMING',
-            errorMessage: undefined,
-          };
-
-          if (isDone) {
-            validateReceivedIntegrity(updated, hashes!);
-          }
-
-          return updated;
-        }
-        return t;
-      })
-    );
-  }, [passphrase, webrtcEngine]);
-
-  // Ref to track expected manifest hashes across racing packets
-  const manifestHashesRef = useRef<Map<string, string>>(new Map());
-
-  // Full File Manifest Root Integrity Check
-  const validateReceivedIntegrity = async (transfer: LocalTransfer, hashes: string[]) => {
-    try {
-      let finalHashes = hashes;
-      // If any hash slot is empty, load chunk buffers from IndexedDB to ensure 100% accurate integrity verification
-      if (!finalHashes || finalHashes.length !== transfer.totalChunks || finalHashes.some((h) => !h)) {
-        const recoveredHashes: string[] = [];
-        for (let idx = 0; idx < transfer.totalChunks; idx++) {
-          const chunkBuf = await getChunk(transfer.fileId, idx);
-          if (!chunkBuf) {
-            console.warn(`Chunk #${idx} not yet stored during final verification`);
-            return;
-          }
-          recoveredHashes.push(await computeSha256(chunkBuf));
-        }
-        finalHashes = recoveredHashes;
-        receivedChunkHashesRef.current.set(transfer.fileId, recoveredHashes);
-      }
-
-      const computedRoot = await computeManifestRootHash(finalHashes);
-      const expectedHash = transfer.manifestHash || manifestHashesRef.current.get(transfer.transferId.toUpperCase()) || manifestHashesRef.current.get(transfer.fileId);
-
-      if (expectedHash && expectedHash !== computedRoot) {
-        console.error('Integrity Mismatch!', { expected: expectedHash, computed: computedRoot });
-        setTransfers((prev) =>
-          prev.map((t) =>
-            t.fileId === transfer.fileId
-              ? {
-                  ...t,
-                  status: 'CORRUPTED',
-                  errorMessage: 'SHA-256 integrity check failed! Transferred bytes do not match sender manifest.',
-                }
-              : t
-          )
-        );
-      } else {
-        setTransfers((prev) =>
-          prev.map((t) =>
-            t.fileId === transfer.fileId
-              ? {
-                  ...t,
-                  status: 'COMPLETED',
-                  manifestHash: expectedHash || computedRoot,
-                  errorMessage: undefined,
-                }
-              : t
-          )
-        );
-        // Notify sender that entire file transfer is verified and complete
-        if (webrtcEngine && transfer.targetPeerId) {
-          webrtcEngine.sendTransferComplete(transfer.transferId, transfer.targetPeerId);
-        }
-        // Record completed transfer in database
-        if (workspaceId) {
-          recordTransfer(workspaceId, transfer.fileName, transfer.fileSize, computedRoot);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to verify manifest hash:', err);
-    }
-  };
-
-  // WebRTC P2P Transfer Session Handshake Listeners
+  // Drop orphaned chunks from old sessions once per page load.
   useEffect(() => {
-    if (!webrtcEngine) return;
+    purgeStaleTransfers().catch(() => undefined);
+  }, []);
 
-    webrtcEngine.setCallbacks({
-      onError: (err) => {
-        if (err.code === 'TRANSFER_NOT_FOUND') {
-          setTransfers((prev) =>
-            prev.map((t) =>
-              t.direction === 'RECEIVE' && t.status === 'PENDING_PEER'
-                ? {
-                    ...t,
-                    status: 'ERROR',
-                    errorMessage: err.message || 'Transfer code not found or sender is offline.',
-                  }
-                : t
-            )
-          );
+  // One TransferManager per signaling engine (i.e. per room).
+  useEffect(() => {
+    if (!engine) return;
+    const manager = new TransferManager(engine, {
+      onChange: setTransfers,
+      getPassphrase: () => passphraseRef.current,
+      isAutoAccept: () => autoAcceptRef.current,
+      onDelivered: (t) => {
+        if (workspaceIdRef.current) {
+          recordTransfer(workspaceIdRef.current, t.fileName, t.fileSize, t.checksum?.replace('…', ''));
         }
       },
-
-      // Sender receives request from a peer who entered their transfer code
-      onTransferRequested: (req) => {
-        const { transferId, receiverPeerId, receiverPeerName } = req;
-        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
-        if (!transfer) {
-          console.warn(`No transfer found for code ${transferId}`);
-          return;
-        }
-
-        // Associate target peer with transfer session
-        const ctrl = transferControlsRef.current.get(transfer.fileId);
-        if (ctrl) {
-          ctrl.targetPeerId = receiverPeerId;
-        }
-
-        // Accept the session and send file manifest directly to requesting peer
-        webrtcEngine.acceptTransfer(transferId, receiverPeerId, {
-          transferId,
-          fileId: transfer.fileId,
-          fileName: transfer.fileName,
-          fileSize: transfer.fileSize,
-          totalChunks: transfer.totalChunks,
-          isEncrypted: transfer.isEncrypted,
-          manifestHash: transfer.manifestHash,
-          senderPeerId: webrtcEngine.peerId,
-          senderName: webrtcEngine.peerName,
-        });
-
-        setTransfers((prev) =>
-          prev.map((t) =>
-            t.fileId === transfer.fileId
-              ? {
-                  ...t,
-                  targetPeerId: receiverPeerId,
-                  targetPeerName: receiverPeerName,
-                  status: 'STREAMING',
-                }
-              : t
-          )
-        );
-
-        // Start point-to-point stream to receiver
-        executePointToPointStream(transfer, receiverPeerId);
-      },
-
-      // Receiver gets confirmation and manifest from sender
-      onTransferAccepted: (acc) => {
-        const { transferId, senderPeerId, manifest } = acc;
-        if (manifest.manifestHash) {
-          manifestHashesRef.current.set(transferId.toUpperCase(), manifest.manifestHash);
-          manifestHashesRef.current.set(manifest.fileId, manifest.manifestHash);
-        }
-        setTransfers((prev) => {
-          const existing = prev.find(
-            (t) => t.transferId.toUpperCase() === transferId.toUpperCase() || t.fileId === manifest.fileId
-          );
-          const filtered = prev.filter(
-            (t) => t.transferId.toUpperCase() !== transferId.toUpperCase() && t.fileId !== manifest.fileId
-          );
-          // Preserve any chunks already completed before manifest arrival or passphrase already provided
-          const existingMap = existing?.chunksMap && existing.chunksMap.length === manifest.totalChunks
-            ? existing.chunksMap
-            : new Array(manifest.totalChunks).fill(false);
-          const completedCount = existingMap.filter(Boolean).length;
-
-          const incoming: LocalTransfer = {
-            fileId: manifest.fileId,
-            transferId,
-            fileName: manifest.fileName,
-            fileSize: manifest.fileSize,
-            totalChunks: manifest.totalChunks,
-            chunksCompleted: completedCount,
-            percentage: Math.round((completedCount / manifest.totalChunks) * 100),
-            speedMBps: existing?.speedMBps || 0,
-            status: completedCount >= manifest.totalChunks ? 'COMPLETED' : 'STREAMING',
-            isEncrypted: manifest.isEncrypted,
-            passphrase: existing?.passphrase || passphrase || undefined,
-            manifestHash: manifest.manifestHash,
-            chunksMap: existingMap,
-            direction: 'RECEIVE',
-            targetPeerId: senderPeerId,
-            targetPeerName: manifest.senderName || 'Peer',
-          };
-          return [incoming, ...filtered];
-        });
-
-        // Initialize metadata in IndexedDB
-        saveTransferMetadata({
-          fileId: manifest.fileId,
-          transferId,
-          fileName: manifest.fileName,
-          fileSize: manifest.fileSize,
-          totalChunks: manifest.totalChunks,
-          mimeType: 'application/octet-stream',
-          manifestHash: manifest.manifestHash,
-          direction: 'RECEIVER',
-          isEncrypted: manifest.isEncrypted,
-          completedChunks: [],
-          isComplete: false,
-          createdAt: Date.now(),
-        });
-
-        // Initialize transfer control for receiver
-        transferControlsRef.current.set(manifest.fileId, {
-          isPaused: false,
-          isCancelled: false,
-          acknowledgedChunks: new Set(),
-          targetPeerId: senderPeerId,
-        });
-      },
-
-      // Sender receives bitmask sync of acknowledged chunks (Resumable Bitmask Recovery)
-      onBitmaskSynced: (sync) => {
-        const { transferId, completedChunks } = sync;
-        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === transferId.toUpperCase());
-        if (!transfer) return;
-
-        const ctrl = transferControlsRef.current.get(transfer.fileId);
-        if (ctrl) {
-          completedChunks.forEach((idx) => ctrl.acknowledgedChunks.add(idx));
-        }
-
-        setTransfers((prev) =>
-          prev.map((t) => {
-            if (t.fileId === transfer.fileId) {
-              const newMap = [...t.chunksMap];
-              completedChunks.forEach((idx) => {
-                if (idx < newMap.length) newMap[idx] = true;
-              });
-              const completed = newMap.filter(Boolean).length;
-              return {
-                ...t,
-                chunksCompleted: completed,
-                percentage: Math.round((completed / t.totalChunks) * 100),
-                chunksMap: newMap,
-              };
-            }
-            return t;
-          })
-        );
-      },
-
-      onChunkAck: (ack) => {
-        const transfer = transfersRef.current.find((t) => t.transferId.toUpperCase() === ack.transferId.toUpperCase());
-        if (!transfer) return;
-        const ctrl = transferControlsRef.current.get(transfer.fileId);
-        if (ctrl) {
-          ctrl.acknowledgedChunks.add(ack.chunkIndex);
-        }
-      },
-
-      onTransferComplete: (comp) => {
-        setTransfers((prev) =>
-          prev.map((t) =>
-            t.transferId.toUpperCase() === comp.transferId.toUpperCase()
-              ? { ...t, status: 'COMPLETED' }
-              : t
-          )
-        );
-      },
-
-      onChunkReceived: handleIncomingChunk,
     });
-  }, [webrtcEngine, handleIncomingChunk]);
+    managerRef.current = manager;
+    return () => {
+      manager.dispose();
+      managerRef.current = null;
+      setTransfers([]);
+    };
+  }, [engine]);
 
-  // Sender prepares file: calculates progressive chunk hashes and registers transfer code
-  const handleFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const handleFiles = async (fileList: FileList | File[] | null) => {
+    if (!fileList || fileList.length === 0) return;
+    // Copy first: a FileList is live and is emptied when we reset the <input> below.
+    const files = Array.from(fileList);
+    if (fileInputRef.current) fileInputRef.current.value = '';
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileId = 'fx_' + Math.random().toString(36).substring(2, 9);
-      // Transfer Code for P2P connection (e.g. HX-8B9A2F)
-      const transferId = 'HX-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-
-      // Pre-compute progressive chunk hashes to build whole-file manifest integrity
-      const chunkHashes: string[] = [];
-      for (let idx = 0; idx < totalChunks; idx++) {
-        const start = idx * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const slice = file.slice(start, end);
-        const buf = await slice.arrayBuffer();
-        const hash = await computeSha256(buf);
-        chunkHashes.push(hash);
-      }
-      const manifestHash = await computeManifestRootHash(chunkHashes);
-
-      // Register transfer control flags
-      transferControlsRef.current.set(fileId, {
-        isPaused: false,
-        isCancelled: false,
-        acknowledgedChunks: new Set(),
-      });
-
-      const newTransfer: LocalTransfer = {
-        fileId,
-        transferId,
-        file,
-        fileName: file.name,
-        fileSize: file.size,
-        totalChunks,
-        chunksCompleted: 0,
-        percentage: 0,
-        speedMBps: 0,
-        status: 'PENDING_PEER', // Awaits receiver connection via Transfer Code
-        isEncrypted: encryptEnabled,
-        passphrase: encryptEnabled ? passphrase : undefined,
-        chunksMap: new Array(totalChunks).fill(false),
-        manifestHash,
-        direction: 'SEND',
-      };
-
-      setTransfers((prev) => [newTransfer, ...prev]);
-
-      // Save sender metadata to IndexedDB
-      saveTransferMetadata({
-        fileId,
-        transferId,
-        fileName: file.name,
-        fileSize: file.size,
-        totalChunks,
-        mimeType: file.type || 'application/octet-stream',
-        manifestHash,
-        direction: 'SENDER',
-        isEncrypted: encryptEnabled,
-        completedChunks: [],
-        isComplete: false,
-        createdAt: Date.now(),
-      });
-
-      // Announce Transfer Code on signaling server
-      if (webrtcEngine) {
-        webrtcEngine.announceTransfer(transferId, {
-          transferId,
-          fileId,
-          fileName: file.name,
-          fileSize: file.size,
-          totalChunks,
-          isEncrypted: encryptEnabled,
-          manifestHash,
-        });
-      }
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  // Point-to-Point Stream Execution (Strictly Target Peer, Real Backpressure, Resumable Bitmask)
-  const executePointToPointStream = async (transfer: LocalTransfer, targetPeerId: string) => {
-    const { file, fileId, totalChunks, isEncrypted, passphrase: pass } = transfer;
-    if (!file || !webrtcEngine) return;
-
-    // Ensure DataChannel is completely open before slicing or streaming chunks
-    try {
-      await webrtcEngine.ensureDataChannel(targetPeerId, 10000);
-    } catch (err) {
-      console.warn('[HyperX] DataChannel preflight timed out, will retry per-chunk:', err);
-    }
-
-    let key: CryptoKey | null = null;
-    if (isEncrypted && pass) {
-      key = await deriveKeyFromSecret(pass);
-    }
-
-    const ctrl = transferControlsRef.current.get(fileId);
-    const chunksMap = new Array(totalChunks).fill(false);
-    const startTime = Date.now();
-    let bytesSent = 0;
-
-    for (let idx = 0; idx < totalChunks; idx++) {
-      // RESUMABLE PROTOCOL: Skip chunk if already acknowledged by receiver
-      if (ctrl?.acknowledgedChunks.has(idx)) {
-        chunksMap[idx] = true;
-        continue;
-      }
-
-      if (ctrl?.isCancelled) {
-        break;
-      }
-
-      // Real user pause handler
-      while (ctrl?.isPaused && !ctrl?.isCancelled) {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-
-      // Slice 512KB chunk (Zero-RAM browser streaming)
-      const start = idx * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const slice = file.slice(start, end);
-      let buffer = await slice.arrayBuffer();
-
-      let ivArr: number[] | undefined;
-      if (key) {
-        const encrypted = await encryptChunk(buffer, key);
-        buffer = encrypted.data;
-        ivArr = encrypted.iv;
-      }
-
-      // Point-to-Point Delivery with REAL BACKPRESSURE & RETRIES
-      let sent = false;
-      let retries = 0;
-      while (!sent && retries < 40 && !ctrl?.isCancelled) {
-        sent = await webrtcEngine.sendChunkToPeer(
-          targetPeerId,
-          {
-            type: 'CHUNK',
-            fileId,
-            transferId: transfer.transferId,
-            chunkIndex: idx,
-            totalChunks,
-            isEncrypted: !!key,
-            iv: ivArr,
-          },
-          buffer
-        );
-        if (!sent) {
-          retries++;
-          await new Promise((r) => setTimeout(r, 150));
-        }
-      }
-
-      if (!sent) {
-        console.error(`Failed to send chunk #${idx} to peer ${targetPeerId} after retries.`);
-        setTransfers((prev) =>
-          prev.map((t) =>
-            t.fileId === fileId
-              ? {
-                  ...t,
-                  status: 'ERROR',
-                  errorMessage: `Connection lost to peer ${targetPeerId} while sending slice #${idx}.`,
-                }
-              : t
-          )
-        );
-        return;
-      }
-
-      chunksMap[idx] = true;
-      ctrl?.acknowledgedChunks.add(idx);
-      bytesSent += (end - start);
-
-      const elapsed = (Date.now() - startTime) / 1000;
-      const speed = elapsed > 0 ? (bytesSent / (1024 * 1024)) / elapsed : 0;
-      const completed = chunksMap.filter(Boolean).length;
-      const pct = Math.round((completed / totalChunks) * 100);
-
-      setTransfers((prev) =>
-        prev.map((t) =>
-          t.fileId === fileId
-            ? {
-                ...t,
-                chunksCompleted: completed,
-                percentage: pct,
-                speedMBps: parseFloat(speed.toFixed(2)),
-                chunksMap: [...chunksMap],
-              }
-            : t
-        )
-      );
-    }
-
-    setTransfers((prev) =>
-      prev.map((t) =>
-        t.fileId === fileId
-          ? {
-              ...t,
-              status: 'COMPLETED',
-              downloadBlob: file,
-            }
-          : t
-      )
-    );
-  };
-
-  const handleConnectStreamByCode = () => {
-    let code = receiveCodeInput.trim().toUpperCase();
-    if (!code) return;
-    if (!code.startsWith('HX-') && code.length === 6) {
-      code = 'HX-' + code;
-    }
-
-    if (!webrtcEngine) {
-      setReceiveError('P2P mesh connection is initializing. Please wait a moment and try again.');
+    const manager = managerRef.current;
+    if (!manager) {
+      setUiError('Not connected yet - wait for the signaling status to show CONNECTED, then try again.');
       return;
     }
-
-    setReceiveLoading(true);
-    setReceiveError(null);
-
-    const targetPass = receivePassphraseInput.trim() || undefined;
-
-    // 1. Immediately create a visible pending transfer card so the receiver sees immediate feedback!
-    setTransfers((prev) => {
-      if (prev.some((t) => t.transferId.toUpperCase() === code)) {
-        return prev;
-      }
-      const pending: LocalTransfer = {
-        fileId: 'pending_' + code,
-        transferId: code,
-        fileName: 'P2P Stream: ' + code,
-        fileSize: 0,
-        totalChunks: 0,
-        chunksCompleted: 0,
-        percentage: 0,
-        speedMBps: 0,
-        status: 'PENDING_PEER',
-        isEncrypted: Boolean(targetPass),
-        passphrase: targetPass,
-        chunksMap: [],
-        direction: 'RECEIVE',
-      };
-      return [pending, ...prev];
-    });
-
-    // 2. Emit real transfer request to signaling server
-    webrtcEngine.requestTransfer(code);
-
-    setTimeout(() => {
-      setReceiveLoading(false);
-      setShowReceiveModal(false);
-      setReceiveCodeInput('');
-      setReceivePassphraseInput('');
-    }, 400);
-  };
-
-  const togglePauseResume = (fileId: string) => {
-    const ctrl = transferControlsRef.current.get(fileId);
-    if (!ctrl) return;
-
-    const nextPaused = !ctrl.isPaused;
-    ctrl.isPaused = nextPaused;
-
-    setTransfers((prev) =>
-      prev.map((t) => {
-        if (t.fileId === fileId) {
-          // If resuming, send bitmask synchronization to sender
-          if (!nextPaused && t.direction === 'RECEIVE' && t.targetPeerId && webrtcEngine) {
-            const confirmedIndices: number[] = [];
-            t.chunksMap.forEach((done, idx) => { if (done) confirmedIndices.push(idx); });
-            webrtcEngine.syncBitmask(t.transferId, t.targetPeerId, confirmedIndices);
-          }
-          return { ...t, status: nextPaused ? 'PAUSED' : 'STREAMING' };
-        }
-        return t;
-      })
-    );
-  };
-
-  // Constant-Memory File Download (O(1) RAM using File System Access API)
-  const downloadFile = async (transfer: LocalTransfer) => {
-    // 1. First attempt direct disk stream (Constant O(1) RAM)
-    const result = await streamSaveFileToDisk(
-      transfer.fileId,
-      transfer.totalChunks,
-      transfer.fileName
-    );
-
-    if (result === 'SAVED' || result === 'ABORTED') return;
-
-    // 2. Fallback to Blob assembly with memory guard if File System Access API is unsupported
-    if (transfer.fileSize > 1.5 * 1024 * 1024 * 1024) {
-      alert(
-        'Warning: This browser does not support the File System Access API for constant-memory disk writing. Downloading files > 1.5GB as in-memory Blobs may cause tab memory exhaustion.'
-      );
+    try {
+      setUiError(null);
+      await manager.sendFiles(files, { encrypt: encryptEnabled && secureCrypto, passphrase });
+    } catch (e) {
+      setUiError(e instanceof Error ? e.message : String(e));
     }
+  };
 
-    let blob = transfer.downloadBlob;
-    if (!blob) {
-      try {
-        const mimeType = transfer.file?.type || 'application/octet-stream';
-        blob = await assembleCompleteFile(transfer.fileId, transfer.totalChunks, mimeType);
-      } catch (err) {
-        console.error('Assembly failed:', err);
-        alert('Could not assemble file chunks from IndexedDB.');
-        return;
-      }
+  const run = async (fn: () => Promise<void> | void) => {
+    try {
+      setUiError(null);
+      await fn();
+    } catch (e) {
+      setUiError(e instanceof Error ? e.message : String(e));
     }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = transfer.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
-  const copyTransferCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2500);
-  };
-
-  const copyTransferLink = (code: string) => {
-    const apiBase = getApiBase();
-    let url = `${window.location.origin}/?code=${code}`;
-    if (apiBase && !apiBase.includes('localhost') && !apiBase.includes('127.0.0.1')) {
-      url += `&backend=${encodeURIComponent(apiBase)}`;
+  const copyInvite = async () => {
+    const link = buildInviteLink(roomId);
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      window.prompt('Copy this invite link:', link);
     }
-    navigator.clipboard.writeText(url);
-    setCopiedLink(code);
-    setTimeout(() => setCopiedLink(null), 2500);
   };
+
+  const openLinks = Object.values(links).filter((s) => s === 'open').length;
+  const connected = signalingStatus === 'CONNECTED';
 
   return (
     <section className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem' }}>
@@ -854,14 +187,16 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
             Zero-RAM P2P Streaming Engine
           </h2>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Point-to-point WebRTC DataChannels &bull; STUN-assisted direct peer mesh &bull; IndexedDB cache &bull; Client-side AES-256-GCM.
+            Direct browser-to-browser WebRTC DataChannels with real backpressure, IndexedDB cache, and AES-256-GCM encryption.
           </p>
         </div>
 
-        {/* E2E Encryption Config & Security Controls */}
+        {/* E2E Encryption Toggle & Passphrase */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
           <button
             type="button"
+            disabled={!secureCrypto}
+            title={secureCrypto ? 'Toggle end-to-end encryption' : 'Encryption needs HTTPS or localhost (WebCrypto is unavailable on plain http://)'}
             onClick={() => setEncryptEnabled(!encryptEnabled)}
             style={{
               background: encryptEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
@@ -869,7 +204,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
               color: encryptEnabled ? 'var(--accent-green)' : 'var(--text-muted)',
               padding: '0.35rem 0.65rem',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: secureCrypto ? 'pointer' : 'not-allowed',
+              opacity: secureCrypto ? 1 : 0.6,
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
@@ -882,47 +218,88 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           </button>
 
           {encryptEnabled && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="Enter secret passphrase..."
-                style={{
-                  background: 'rgba(0,0,0,0.4)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '4px',
-                  padding: '0.25rem 0.5rem',
-                  color: 'var(--bauhaus-yellow)',
-                  fontSize: '0.75rem',
-                  outline: 'none',
-                  width: '160px',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              />
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ padding: '0.25rem 0.4rem' }}
-                onClick={() => setShowPassword(!showPassword)}
-                title={showPassword ? 'Hide passphrase' : 'Show passphrase'}
-              >
-                {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ padding: '0.25rem 0.45rem', fontSize: '0.72rem' }}
-                onClick={() => setPassphrase(generateSecurePassphrase())}
-                title="Generate high-entropy encryption key"
-              >
-                <KeyRound size={12} />
-                <span>Gen Key</span>
-              </button>
+            <input
+              type="text"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              placeholder="Encryption Passphrase"
+              title="Both sides must use the SAME passphrase"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                borderBottom: '1px dashed rgba(255, 255, 255, 0.25)',
+                color: 'var(--bauhaus-yellow)',
+                fontSize: '0.75rem',
+                outline: 'none',
+                width: '180px',
+                fontFamily: 'var(--font-mono)',
+              }}
+            />
+          )}
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={autoAccept} onChange={(e) => setAutoAccept(e.target.checked)} />
+            Auto-accept incoming
+          </label>
+
+          {openLinks > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+              <Radio size={12} />
+              <span>{openLinks} P2P Channels</span>
             </div>
           )}
         </div>
       </div>
+
+      {/* Room / peers bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.7rem 0.9rem', marginBottom: '1.25rem' }}>
+        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>ROOM</span>
+        <code style={{ color: 'var(--bauhaus-yellow)', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.08em' }}>{roomId}</code>
+        <button type="button" className="btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }} onClick={copyInvite}>
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          <span>{copied ? 'Copied' : 'Copy invite link'}</span>
+        </button>
+        <button type="button" className="btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }} onClick={onNewRoom}>
+          <RefreshCw size={13} />
+          <span>New room</span>
+        </button>
+
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+          {peers.length === 0 ? (
+            <span style={{ color: 'var(--text-muted)' }}>
+              {connected ? 'No one else is here yet - send them the invite link' : 'Not connected'}
+            </span>
+          ) : (
+            peers.map((p) => (
+              <span key={p.peerId} title={`P2P link: ${links[p.peerId] ?? 'none'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: linkColor(links[p.peerId]) }} />
+                {p.peerName}
+              </span>
+            ))
+          )}
+        </span>
+      </div>
+
+      {!connected && (
+        <div style={{ background: 'rgba(255, 46, 0, 0.12)', border: '1px solid var(--bauhaus-red)', color: '#fff', borderRadius: '6px', padding: '0.6rem 0.9rem', fontSize: '0.8rem', marginBottom: '1rem' }}>
+          Signaling server {signalingStatus === 'CONNECTING' ? 'connecting…' : 'unreachable'}
+          {engine?.lastError ? ` - ${engine.lastError}` : ''}. Peers can't find each other until it connects
+          (retrying automatically). Deployed on Vercel? Set <code>VITE_API_BASE_URL</code> (or <code>VITE_SIGNALING_URL</code>) to your backend.
+        </div>
+      )}
+      {!secureCrypto && (
+        <div style={{ background: 'rgba(255, 200, 0, 0.1)', border: '1px solid var(--bauhaus-yellow)', color: '#fff', borderRadius: '6px', padding: '0.6rem 0.9rem', fontSize: '0.8rem', marginBottom: '1rem' }}>
+          Encryption is disabled: this page isn't served over HTTPS (or localhost), so the browser hides WebCrypto. Transfers still work, unencrypted.
+        </div>
+      )}
+      {uiError && (
+        <div style={{ background: 'rgba(255, 46, 0, 0.12)', border: '1px solid var(--bauhaus-red)', color: '#fff', borderRadius: '6px', padding: '0.6rem 0.9rem', fontSize: '0.8rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+          <span>{uiError}</span>
+          <button type="button" onClick={() => setUiError(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }} aria-label="Dismiss message">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Drag & Drop Zero-RAM Zone */}
       <div
@@ -958,14 +335,14 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           </div>
         </div>
         <h4 style={{ margin: '0 0 0.35rem 0', color: '#fff', fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-          Drop files to initialize P2P transfer session
+          Drop files to offer them peer-to-peer
         </h4>
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          Generates a unique Transfer Code. Chunks stream slice-by-slice directly to the recipient over WebRTC.
+          Receivers accept the file, then it streams straight from your disk in 64KB chunks with backpressure - nothing is uploaded to a server.
         </p>
       </div>
 
-      {/* Receive Code Prompt Modal */}
+      {/* Join-room modal (Hero "RECEIVE") */}
       {showReceiveModal && (
         <div style={{
           position: 'fixed',
@@ -988,16 +365,17 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
             boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
           }}>
             <h3 style={{ fontSize: '1.3rem', fontWeight: 900, color: '#fff', margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>
-              Connect to Transfer Stream
+              Join a sender&apos;s room
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              Enter the Transfer Code (e.g. <code>HX-8B9A2F</code>) provided by the sender to establish a direct WebRTC DataChannel:
+              Enter the room code (or paste the invite link) the sender gave you. Offered files will appear below; press Accept to start the direct transfer.
             </p>
             <input
               type="text"
               value={receiveCodeInput}
               onChange={(e) => setReceiveCodeInput(e.target.value)}
-              placeholder="e.g. HX-8B9A2F"
+              placeholder="e.g. K7M2QX9P"
+              autoFocus
               style={{
                 width: '100%',
                 padding: '0.75rem 1rem',
@@ -1006,70 +384,29 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                 borderRadius: '4px',
                 color: '#fff',
                 fontFamily: 'var(--font-mono)',
-                fontSize: '1rem',
-                textTransform: 'uppercase',
-                marginBottom: '1rem',
+                fontSize: '0.95rem',
+                marginBottom: '1.25rem',
                 outline: 'none',
               }}
             />
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-                <Lock size={12} style={{ color: 'var(--accent-green)' }} />
-                <span>Decryption Passphrase (Optional, if sender encrypted the file):</span>
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <input
-                  type={showReceivePassphrase ? 'text' : 'password'}
-                  value={receivePassphraseInput}
-                  onChange={(e) => setReceivePassphraseInput(e.target.value)}
-                  placeholder="e.g. Secret Key"
-                  style={{
-                    flex: 1,
-                    padding: '0.65rem 0.85rem',
-                    background: 'rgba(0,0,0,0.5)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '4px',
-                    color: 'var(--bauhaus-yellow)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.88rem',
-                    outline: 'none',
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setShowReceivePassphrase(!showReceivePassphrase)}
-                  style={{ padding: '0.65rem' }}
-                  title={showReceivePassphrase ? 'Hide key' : 'Show key'}
-                >
-                  {showReceivePassphrase ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-            {receiveError && (
-              <div style={{ color: 'var(--bauhaus-red)', fontSize: '0.8rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255, 46, 0, 0.1)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255, 46, 0, 0.3)' }}>
-                <AlertTriangle size={15} />
-                <span>{receiveError}</span>
-              </div>
-            )}
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => { setShowReceiveModal(false); setReceiveError(null); }}
-              >
+              <button type="button" className="btn-ghost" onClick={() => setShowReceiveModal(false)}>
                 Cancel
               </button>
               <button
                 type="button"
                 className="btn-hyper-nav"
-                style={{ background: 'var(--bauhaus-red)', opacity: receiveLoading ? 0.7 : 1 }}
-                onClick={handleConnectStreamByCode}
-                disabled={receiveLoading}
+                style={{ background: 'var(--bauhaus-red)' }}
+                onClick={() => {
+                  const code = parseRoomInput(receiveCodeInput);
+                  if (code) {
+                    onJoinRoom(code);
+                    setShowReceiveModal(false);
+                    setReceiveCodeInput('');
+                  }
+                }}
               >
-                {receiveLoading ? 'Searching Mesh...' : 'Establish P2P Stream'}
+                Join room
               </button>
             </div>
           </div>
@@ -1081,241 +418,172 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         <div style={{ marginTop: '2rem' }}>
           <h4 style={{ fontSize: '0.95rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             <Cpu size={16} style={{ color: 'var(--bauhaus-blue)' }} />
-            P2P Transfer Sessions ({transfers.length})
+            Active Transfer Streams ({transfers.length})
           </h4>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {transfers.map((t) => (
-              <div
-                key={t.fileId}
-                style={{
-                  background: 'rgba(10, 10, 26, 0.75)',
-                  border: `1px solid ${t.status === 'CORRUPTED' || t.status === 'ERROR' ? 'var(--bauhaus-red)' : 'var(--border-subtle)'}`,
-                  borderRadius: '8px',
-                  padding: '1.25rem',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 800, color: '#fff', fontSize: '1rem' }}>{t.fileName}</span>
-                      <span className="badge-tag" style={{ fontSize: '0.7rem' }}>{formatBytes(t.fileSize)}</span>
-                      
-                      {/* Transfer Code Pill */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(255, 215, 0, 0.15)', border: '1px solid rgba(255, 215, 0, 0.3)', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--bauhaus-yellow)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                          CODE: {t.transferId}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => copyTransferCode(t.transferId)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--bauhaus-yellow)', padding: '0 2px' }}
-                          title="Copy Transfer Code"
-                        >
-                          {copiedCode === t.transferId ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => copyTransferLink(t.transferId)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--bauhaus-yellow)', padding: '0 2px' }}
-                          title="Copy Direct Link (instant receiver connect)"
-                        >
-                          {copiedLink === t.transferId ? <Check size={11} color="var(--accent-green)" /> : <Link2 size={11} />}
-                        </button>
-                      </div>
-
-                      {t.direction === 'SEND' && t.status === 'PENDING_PEER' && (
-                        <button
-                          type="button"
-                          onClick={() => window.open(`${window.location.origin}/?code=${t.transferId}`, '_blank')}
-                          className="btn-ghost"
+            {transfers.map((t) => {
+              const done = t.status === 'COMPLETED';
+              const failed = t.status === 'ERROR';
+              return (
+                <div
+                  key={t.fileId}
+                  style={{
+                    background: 'rgba(10, 10, 26, 0.75)',
+                    border: `1px solid ${failed ? 'var(--bauhaus-red)' : 'var(--border-subtle)'}`,
+                    borderRadius: '8px',
+                    padding: '1.25rem',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 800, color: '#fff', fontSize: '1rem' }}>{t.fileName}</span>
+                        <span className="badge-tag" style={{ fontSize: '0.7rem' }}>{formatBytes(t.fileSize)}</span>
+                        <span
+                          className="badge-tag"
                           style={{
-                            padding: '0.2rem 0.55rem',
-                            fontSize: '0.72rem',
-                            borderColor: 'var(--bauhaus-blue)',
+                            fontSize: '0.7rem',
+                            background: t.direction === 'SEND' ? 'rgba(0, 71, 255, 0.15)' : 'rgba(255, 46, 0, 0.15)',
+                            borderColor: t.direction === 'SEND' ? 'var(--bauhaus-blue)' : 'var(--bauhaus-red)',
                             color: '#fff',
-                            background: 'rgba(0, 71, 255, 0.25)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            fontWeight: 600,
                           }}
-                          id="open-receiver-tab-btn"
-                          title="Open new tab to receive this transfer immediately"
                         >
-                          Open Receiver Tab ↗
-                        </button>
-                      )}
-
-                      <span
-                        className="badge-tag"
-                        style={{
-                          fontSize: '0.7rem',
-                          background: t.direction === 'SEND' ? 'rgba(0, 71, 255, 0.15)' : 'rgba(255, 46, 0, 0.15)',
-                          borderColor: t.direction === 'SEND' ? 'var(--bauhaus-blue)' : 'var(--bauhaus-red)',
-                          color: '#fff',
-                        }}
-                      >
-                        {t.direction === 'SEND'
-                          ? `OUTGOING → ${t.targetPeerName || 'Awaiting Receiver'}`
-                          : `INCOMING ← ${t.targetPeerName || 'Sender'}`}
-                      </span>
-
-                      {t.isEncrypted && (
-                        <span className="badge-tag" style={{ fontSize: '0.7rem', color: 'var(--accent-green)', borderColor: 'rgba(16,185,129,0.3)' }}>
-                          <ShieldCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                          AES-256-GCM
+                          {t.direction === 'SEND' ? 'OUTGOING (SEND)' : `INCOMING FROM ${t.senderName || 'PEER'}`}
                         </span>
+                        <span className="badge-tag" style={{ fontSize: '0.7rem', color: done ? 'var(--accent-green)' : failed ? 'var(--bauhaus-red)' : '#fff' }}>
+                          {statusLabel(t)}
+                        </span>
+                        {t.isEncrypted && (
+                          <span className="badge-tag" style={{ fontSize: '0.7rem', color: 'var(--accent-green)', borderColor: 'rgba(16,185,129,0.3)' }}>
+                            <ShieldCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
+                            AES-256-GCM
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          ID: <code>{t.fileId}</code>
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', fontFamily: 'var(--font-mono)' }}>
+                        {t.chunksCompleted} / {t.totalChunks} chunks ({Math.round(t.chunkSize / 1024)}KB slices) &bull;{' '}
+                        <span style={{ color: 'var(--bauhaus-yellow)', fontWeight: 700 }}>{t.speedMBps} MB/s</span>
+                        {t.checksum && (
+                          <span>
+                            {' '}&bull; SHA-256 (first 1MB): <code>{t.checksum}</code>
+                            {t.checksumVerified && <span style={{ color: 'var(--accent-green)' }}> verified</span>}
+                          </span>
+                        )}
+                      </div>
+                      {t.deliveredTo.length > 0 && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--accent-green)', marginTop: '0.3rem' }}>
+                          Delivered to: {t.deliveredTo.join(', ')}
+                        </div>
+                      )}
+                      {t.note && (
+                        <div style={{ fontSize: '0.78rem', color: failed ? 'var(--bauhaus-red)' : 'var(--bauhaus-yellow)', marginTop: '0.3rem' }}>
+                          {t.note}
+                        </div>
                       )}
                     </div>
 
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem', fontFamily: 'var(--font-mono)' }}>
-                      {t.status === 'PENDING_PEER' ? (
-                        <span style={{ color: 'var(--bauhaus-yellow)' }}>
-                          Awaiting peer to enter Transfer Code <code>{t.transferId}</code>...
-                        </span>
-                      ) : (
-                        <>
-                          {t.chunksCompleted} / {t.totalChunks} chunks ({CHUNK_SIZE / 1024}KB slices) &bull;{' '}
-                          <span style={{ color: 'var(--bauhaus-yellow)', fontWeight: 700 }}>{t.speedMBps} MB/s</span>
-                          {t.manifestHash && (
-                            <span> &bull; Root Manifest Hash: <code>{t.manifestHash.substring(0, 16)}...</code></span>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {t.errorMessage && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--bauhaus-red)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
-                        <AlertTriangle size={14} />
-                        <span>{t.errorMessage}</span>
-                      </div>
-                    )}
-
-                    {t.direction === 'RECEIVE' && t.isEncrypted && !t.passphrase && t.status !== 'COMPLETED' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', background: 'rgba(255, 215, 0, 0.08)', padding: '0.45rem 0.65rem', borderRadius: '4px', border: '1px solid rgba(255, 215, 0, 0.25)', flexWrap: 'wrap' }}>
-                        <KeyRound size={14} style={{ color: 'var(--bauhaus-yellow)' }} />
-                        <span style={{ fontSize: '0.75rem', color: 'var(--bauhaus-yellow)', fontWeight: 600 }}>Decryption Key Required:</span>
-                        <input
-                          type="password"
-                          placeholder="Enter passphrase..."
-                          value={unlockPassphrases[t.fileId] || ''}
-                          onChange={(e) => setUnlockPassphrases({ ...unlockPassphrases, [t.fileId]: e.target.value })}
-                          style={{
-                            padding: '0.25rem 0.5rem',
-                            background: 'rgba(0,0,0,0.5)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '4px',
-                            color: '#fff',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.75rem',
-                            outline: 'none',
-                            width: '160px',
-                          }}
-                        />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {t.direction === 'RECEIVE' && (t.status === 'OFFERED' || failed) && (
                         <button
                           type="button"
                           className="btn-hyper-nav"
-                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem', background: 'var(--bauhaus-blue)' }}
-                          onClick={() => {
-                            const pass = unlockPassphrases[t.fileId]?.trim();
-                            if (pass) {
-                              setTransfers((prev) =>
-                                prev.map((item) =>
-                                  item.fileId === t.fileId ? { ...item, passphrase: pass, errorMessage: undefined, status: 'STREAMING' } : item
-                                )
-                              );
-                            }
-                          }}
+                          style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', background: 'var(--accent-green)' }}
+                          onClick={() => run(() => managerRef.current?.accept(t.fileId))}
                         >
-                          Unlock
+                          {failed ? <RefreshCw size={14} /> : <Download size={14} />}
+                          <span>{failed ? 'Retry' : 'Accept & receive'}</span>
                         </button>
-                      </div>
-                    )}
-                  </div>
+                      )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {t.status === 'STREAMING' || t.status === 'PAUSED' ? (
-                      <button
-                        className="btn-ghost"
-                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
-                        onClick={() => togglePauseResume(t.fileId)}
-                        title={t.status === 'STREAMING' ? 'Pause Transfer' : 'Resume Transfer (Bitmask Recovery)'}
-                      >
-                        {t.status === 'STREAMING' ? <Pause size={13} /> : <Play size={13} />}
-                        <span>{t.status === 'STREAMING' ? 'Pause' : 'Resume'}</span>
-                      </button>
-                    ) : t.status === 'COMPLETED' ? (
+                      {(t.status === 'STREAMING' || t.status === 'PAUSED') && (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                          onClick={() => managerRef.current?.togglePause(t.fileId)}
+                          title={t.status === 'STREAMING' ? 'Pause transfer' : 'Resume transfer (only missing chunks are re-sent)'}
+                        >
+                          {t.status === 'STREAMING' ? <Pause size={13} /> : <Play size={13} />}
+                          <span>{t.status === 'STREAMING' ? 'Pause' : 'Resume'}</span>
+                        </button>
+                      )}
+
+                      {t.direction === 'RECEIVE' && done && (
+                        <button
+                          type="button"
+                          className="btn-hyper-nav"
+                          style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', background: 'var(--accent-green)' }}
+                          onClick={() => run(() => managerRef.current?.save(t.fileId))}
+                        >
+                          <Download size={14} />
+                          <span>Save file</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
-                        className="btn-hyper-nav"
-                        style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', background: 'var(--accent-green)' }}
-                        onClick={() => downloadFile(t)}
+                        className="btn-ghost"
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.78rem' }}
+                        onClick={() => managerRef.current?.dismiss(t.fileId)}
+                        title={
+                          t.direction === 'SEND'
+                            ? 'Withdraw this offer / stop sharing'
+                            : done
+                              ? 'Remove and free the cached data'
+                              : 'Decline / cancel'
+                        }
+                        aria-label="Remove transfer"
                       >
-                        <Download size={14} />
-                        <span>Save to Disk</span>
+                        <X size={13} />
                       </button>
-                    ) : null}
+                    </div>
                   </div>
-                </div>
 
-                {/* Progress Bar */}
-                <div style={{ background: 'rgba(0, 0, 0, 0.5)', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-                  <div
-                    style={{
-                      height: '100%',
-                      width: `${t.percentage}%`,
-                      background: t.status === 'COMPLETED' ? 'var(--accent-green)' : t.status === 'CORRUPTED' || t.status === 'ERROR' ? 'var(--bauhaus-red)' : 'linear-gradient(90deg, var(--bauhaus-blue), var(--bauhaus-yellow))',
-                      transition: 'width 0.15s ease',
-                    }}
-                  />
-                </div>
+                  {/* Progress Bar */}
+                  <div style={{ background: 'rgba(0, 0, 0, 0.5)', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.75rem' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${t.percentage}%`,
+                        background: done ? 'var(--accent-green)' : 'linear-gradient(90deg, var(--bauhaus-blue), var(--bauhaus-yellow))',
+                        transition: 'width 0.15s ease',
+                      }}
+                    />
+                  </div>
 
-                {/* Chunk Heatmap Visualizer */}
-                <div style={{ marginTop: '0.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontFamily: 'var(--font-mono)' }}>
-                    <span>Chunk Transmission Map ({t.totalChunks} slots)</span>
-                    <span style={{ color: t.status === 'COMPLETED' ? 'var(--accent-green)' : '#fff', fontWeight: 700 }}>
-                      {t.status === 'COMPLETED' ? (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <FileCheck size={12} color="var(--accent-green)" />
-                          100% STORED &bull; INTEGRITY VERIFIED
-                        </span>
-                      ) : t.status === 'PENDING_PEER' ? (
-                        'READY FOR PEER'
-                      ) : (
-                        `${t.percentage}% STREAMED`
-                      )}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: `repeat(auto-fill, minmax(8px, 1fr))`,
-                      gap: '2px',
-                      maxHeight: '40px',
-                      overflowY: 'hidden',
-                    }}
-                  >
-                    {t.chunksMap.map((done, idx) => (
-                      <div
-                        key={idx}
-                        title={`Chunk #${idx} (${done ? 'Delivered & Stored' : 'Pending'})`}
-                        style={{
-                          height: '8px',
-                          borderRadius: '1px',
-                          background: done ? 'var(--bauhaus-blue)' : 'rgba(255, 255, 255, 0.1)',
-                          transition: 'background 0.2s',
-                        }}
-                      />
-                    ))}
+                  {/* Chunk Heatmap Visualizer */}
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontFamily: 'var(--font-mono)' }}>
+                      <span>Chunk Transmission Map ({t.totalChunks} chunks)</span>
+                      <span style={{ color: done ? 'var(--accent-green)' : '#fff', fontWeight: 700 }}>
+                        {done
+                          ? t.direction === 'RECEIVE' ? '100% STORED IN INDEXEDDB' : '100% DELIVERED'
+                          : `${t.percentage}% ${t.direction === 'SEND' ? 'SENT' : 'RECEIVED'}`}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(8px, 1fr))', gap: '2px', maxHeight: '40px', overflowY: 'hidden' }}>
+                      {t.heat.map((v, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            height: '8px',
+                            borderRadius: '1px',
+                            background: v >= 1 ? 'var(--bauhaus-blue)' : v > 0 ? 'rgba(0, 71, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                            transition: 'background 0.2s',
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

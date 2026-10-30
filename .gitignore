@@ -39,14 +39,3 @@ dist/
 .vscode/
 *.swp
 *.swo
-
-# Python & SQLite
-__pycache__/
-*.py[cod]
-*$py.class
-*.db
-*.sqlite3
-.pytest_cache/
-.venv/
-venv/
-ENV/

@@ -1,15 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Server, RefreshCw, CheckCircle2, XCircle, Activity, Globe, Link2, Check } from 'lucide-react';
+import { Server, RefreshCw, CheckCircle2, XCircle, Activity, Globe } from 'lucide-react';
 import { fetchBackendHealth, probeBrowserCapabilities, HealthResponse, ClientProbeCapabilities } from '../services/api';
-import { getApiBase, setCustomApiBase } from '../services/authService';
 
 export const DiagnosticCard: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [capabilities, setCapabilities] = useState<ClientProbeCapabilities | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastChecked, setLastChecked] = useState<string>('');
-  const [backendUrlInput, setBackendUrlInput] = useState<string>(getApiBase());
-  const [savedUrl, setSavedUrl] = useState<boolean>(false);
 
   const runDiagnostics = async () => {
     setLoading(true);
@@ -45,7 +42,7 @@ export const DiagnosticCard: React.FC = () => {
 
         <h2 className="card-title">Backend Control Plane</h2>
         <p className="card-desc">
-          Python 3.11+ / FastAPI signaling node providing authentication, workspace boundaries, and session telemetry.
+          Spring Boot 3.3 signaling node providing authentication, workspace boundaries, and session telemetry.
         </p>
 
         <div style={{ margin: '1.25rem 0' }}>
@@ -79,49 +76,6 @@ export const DiagnosticCard: React.FC = () => {
               {lastChecked || 'Initial probe'}
             </span>
           </div>
-        </div>
-
-        {/* Custom Backend / Tunnel Node URL Config */}
-        <div style={{ marginBottom: '1rem', background: 'rgba(0,0,0,0.3)', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '0.4rem', fontWeight: 600 }}>
-            <Link2 size={13} style={{ color: 'var(--bauhaus-blue)' }} />
-            <span>Signaling & Backend Node URL:</span>
-          </label>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <input
-              type="text"
-              placeholder="e.g. http://localhost:8080 or https://..."
-              value={backendUrlInput}
-              onChange={(e) => setBackendUrlInput(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '0.35rem 0.6rem',
-                fontSize: '0.78rem',
-                background: 'rgba(0,0,0,0.5)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '4px',
-                color: '#fff',
-                fontFamily: 'var(--font-mono)',
-                outline: 'none',
-              }}
-            />
-            <button
-              type="button"
-              className="btn-hyper-nav"
-              style={{ padding: '0.35rem 0.65rem', fontSize: '0.74rem', background: savedUrl ? 'var(--accent-green)' : 'var(--bauhaus-blue)' }}
-              onClick={() => {
-                setCustomApiBase(backendUrlInput);
-                setSavedUrl(true);
-                runDiagnostics();
-                setTimeout(() => setSavedUrl(false), 2000);
-              }}
-            >
-              {savedUrl ? <Check size={12} /> : 'Save'}
-            </button>
-          </div>
-          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.3rem' }}>
-            Leave blank for zero-server P2P mesh, or enter a remote backend URL.
-          </span>
         </div>
 
         <button

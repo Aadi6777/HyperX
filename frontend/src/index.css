@@ -874,3 +874,14 @@ code, pre {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Respect the OS "reduce motion" setting. Decorative animations also compete with the transfer
+   engine for the main thread on low-powered devices, so users who opt out get faster transfers. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

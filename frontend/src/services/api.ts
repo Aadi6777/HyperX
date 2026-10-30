@@ -13,14 +13,13 @@ export interface ClientProbeCapabilities {
   webCryptoSupported: boolean;
   streamSupported: boolean;
 }
-import { getApiBase } from './authService';
 
 /**
  * Fetch health status from HyperX backend.
  * Falls back gracefully to diagnostics if backend is starting or offline.
  */
 export async function fetchBackendHealth(): Promise<HealthResponse> {
-  const baseUrl = getApiBase();
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
   const endpoint = `${baseUrl}/api/v1/health`;
 
   const controller = new AbortController();

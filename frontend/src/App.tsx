@@ -16,8 +16,10 @@ import {
 import {
   WebRtcEngine,
   PeerInfo,
-  ChatMessage
+  ChatMessage,
+  LinkState
 } from './services/webrtcEngine';
+import { initialRoom, getRoomFromHash, writeRoomToHash, generateRoomCode } from './services/room';
 import { UserCircle, LogIn, LogOut, Terminal } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -29,53 +31,51 @@ export const App: React.FC = () => {
   const [peers, setPeers] = useState<PeerInfo[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [signalingStatus, setSignalingStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'CONNECTING'>('DISCONNECTED');
-  const [activeEngine, setActiveEngine] = useState<WebRtcEngine | null>(null);
 
-  const webrtcEngineRef = useRef<WebRtcEngine | null>(null);
+  // The signaling room is independent of login: it's a shareable code in the URL (#room=...).
+  const [roomId, setRoomId] = useState<string>(() => initialRoom());
+  const [engine, setEngine] = useState<WebRtcEngine | null>(null);
+  const [links, setLinks] = useState<Record<string, LinkState>>({});
+  const [guestName] = useState(() => 'Guest-' + Math.random().toString(36).substring(2, 6));
+
   const transferCenterRef = useRef<HTMLDivElement>(null);
   const transferControlsRef = useRef<{ triggerFileSelect: () => void; promptReceiveCode: () => void } | null>(null);
 
-  // Initialize Auth & Workspace on startup
+  // Initialize Auth on startup
   useEffect(() => {
-    fetchCurrentUser()
-      .then((user) => {
-        if (user) {
-          setCurrentUser(user);
-        }
+    fetchCurrentUser().then((user) => {
+      if (user) {
+        setCurrentUser(user);
         loadWorkspaces();
-      })
-      .catch(() => {
-        loadWorkspaces();
-      });
+      }
+    });
   }, []);
 
   const loadWorkspaces = async () => {
     try {
       const list = await fetchWorkspaces();
-      if (list && list.length > 0) {
-        setWorkspaces(list);
+      setWorkspaces(list);
+      if (list.length > 0) {
         setActiveWorkspace(list[0]);
-        return;
       }
     } catch {
-      // Fallback workspace for instant guest/standalone mode
+      // Fallback workspace for offline/standalone mode
+      const fallback: Workspace = {
+        id: 'ws_local_demo',
+        name: 'HyperX Primary Cluster',
+        slug: 'primary-cluster',
+        ownerId: 'peer_local',
+        ownerName: 'HyperX Operator',
+        currentUserRole: 'OWNER',
+        memberCount: 2,
+        createdAt: new Date().toISOString(),
+      };
+      setWorkspaces([fallback]);
+      setActiveWorkspace(fallback);
     }
-
-    const fallback: Workspace = {
-      id: 'hyperx-public-mesh',
-      name: 'HyperX Global Mesh',
-      slug: 'global-mesh',
-      ownerId: 'peer_public',
-      ownerName: 'HyperX Mesh',
-      currentUserRole: 'MEMBER',
-      memberCount: 1,
-      createdAt: new Date().toISOString(),
-    };
-    setWorkspaces([fallback]);
-    setActiveWorkspace(fallback);
   };
 
-  // When active workspace changes, load its members & connect WebRTC signaling
+  // When the active workspace changes, load its members
   useEffect(() => {
     if (!activeWorkspace) return;
 
@@ -101,41 +101,54 @@ export const App: React.FC = () => {
           },
         ]);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspace?.id]);
 
-    // Initialize WebRTC Engine with state setter so child components receive it immediately
-    const peerName = currentUser?.fullName || 'Peer_' + Math.random().toString(36).substring(2, 6);
-    const engine = new WebRtcEngine(peerName);
-    webrtcEngineRef.current = engine;
-    setActiveEngine(engine);
-
-    engine.setCallbacks({
+  // Connect to the signaling room. This no longer depends on being signed in or having a
+  // workspace: previously no engine existed at all for anonymous visitors, so nothing could send.
+  const displayName = currentUser?.fullName || guestName;
+  useEffect(() => {
+    const e = new WebRtcEngine(displayName);
+    e.setCallbacks({
       onPeersUpdated: (updatedPeers) => setPeers(updatedPeers),
       onChatMessage: (msg) => setChatMessages((prev) => [...prev, msg]),
       onConnectionStatus: (status) => setSignalingStatus(status),
+      onLinksChanged: (l) => setLinks(l),
     });
-
-    engine.connect(activeWorkspace.id);
+    setPeers([]);
+    setLinks({});
+    setEngine(e);
+    e.connect(roomId);
 
     return () => {
-      engine.disconnect();
-      setActiveEngine(null);
+      e.disconnect();
     };
-  }, [activeWorkspace, currentUser]);
+  }, [roomId, displayName]);
+
+  const joinRoom = (id: string) => {
+    writeRoomToHash(id);
+    setRoomId(id);
+  };
+
+  // Pasting/following an invite link while the app is already open switches rooms too.
+  useEffect(() => {
+    const onHashChange = () => {
+      const fromHash = getRoomFromHash();
+      if (fromHash) setRoomId((prev) => (prev === fromHash ? prev : fromHash));
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const handleLogout = () => {
     clearSession();
     setCurrentUser(null);
     setWorkspaces([]);
     setActiveWorkspace(null);
-    if (webrtcEngineRef.current) {
-      webrtcEngineRef.current.disconnect();
-    }
   };
 
   const handleSendChat = (text: string) => {
-    if (webrtcEngineRef.current) {
-      webrtcEngineRef.current.sendChat(text);
-    }
+    engine?.sendChat(text);
   };
 
   const scrollToTransfer = () => {
@@ -178,16 +191,9 @@ export const App: React.FC = () => {
 
         {/* Center Live Mesh Telemetry Pill */}
         <div className="nav-telemetry-badge hidden-mobile">
-          <span
-            className="pill-dot-pulse"
-            style={{ background: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-red)' }}
-          />
+          <span className="pill-dot-pulse" />
           <span style={{ color: 'var(--text-secondary)' }}>
             STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-yellow)' }}>{signalingStatus}</strong>
-          </span>
-          <span className="telemetry-separator">|</span>
-          <span style={{ color: 'var(--text-muted)' }}>
-            PEERS: <strong style={{ color: peers.length > 0 ? 'var(--accent-green)' : '#fff' }}>{signalingStatus === 'CONNECTED' ? `${peers.length + 1} ONLINE` : 'OFFLINE'}</strong>
           </span>
           <span className="telemetry-separator">|</span>
           <span style={{ color: 'var(--text-muted)' }}>REGION: <strong>ap-south-1</strong></span>
@@ -246,10 +252,12 @@ export const App: React.FC = () => {
           <WorkspaceBar
             workspaces={workspaces}
             activeWorkspace={activeWorkspace}
-            onSelectWorkspace={(ws) => setActiveWorkspace(ws)}
+            onSelectWorkspace={(ws) => {
+              setActiveWorkspace(ws);
+              joinRoom(ws.id); // explicit workspace choice => that workspace's room
+            }}
             onWorkspacesChanged={loadWorkspaces}
             members={members}
-            onlinePeersCount={peers.length}
             signalingStatus={signalingStatus}
           />
         )}
@@ -257,8 +265,14 @@ export const App: React.FC = () => {
         {/* Zero-RAM Transfer Studio */}
         <div ref={transferCenterRef}>
           <TransferCenter
-            workspaceId={activeWorkspace?.id}
-            webrtcEngine={activeEngine}
+            workspaceId={currentUser ? activeWorkspace?.id : undefined}
+            engine={engine}
+            roomId={roomId}
+            peers={peers}
+            links={links}
+            signalingStatus={signalingStatus}
+            onJoinRoom={joinRoom}
+            onNewRoom={() => joinRoom(generateRoomCode())}
             onMountControls={(ctrls) => {
               transferControlsRef.current = ctrls;
             }}
@@ -286,12 +300,12 @@ export const App: React.FC = () => {
             <div className="icon-box cyan">
               <Terminal size={20} />
             </div>
-            <span className="badge-tag">P2P DataMesh &bull; Supabase Connected</span>
+            <span className="badge-tag">Production Verified &bull; Supabase</span>
           </div>
 
           <h3 className="card-title">HyperX Infrastructure Runtime</h3>
           <p className="card-desc">
-            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Python FastAPI signaling server coordinates STUN ICE negotiation and persists audit state into your PostgreSQL / Supabase cluster.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
           </p>
 
           <pre style={{
@@ -304,7 +318,7 @@ export const App: React.FC = () => {
             color: '#38bdf8',
             fontFamily: 'var(--font-mono)'
           }}>
-{`# 1. Start Python FastAPI Backend Connected to Supabase
+{`# 1. Start Spring Boot Backend Connected to Supabase
 ./run-supabase.sh
 
 # 2. Expose Port 8080 with Secure Cloudflare Tunnel

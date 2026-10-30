@@ -1,4 +1,4 @@
-import { getStoredToken, getApiBase } from './authService';
+import { getStoredToken } from './authService';
 
 export interface Workspace {
   id: string;
@@ -41,6 +41,8 @@ export interface TransferRecord {
   completedAt?: string;
 }
 
+const getApiBase = () => import.meta.env.VITE_API_BASE_URL || '';
+
 function authHeaders(): HeadersInit {
   const token = getStoredToken();
   return {
@@ -50,19 +52,11 @@ function authHeaders(): HeadersInit {
 }
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {
-  const apiBase = getApiBase();
-  if (!apiBase) return [];
-  try {
-    const res = await fetch(`${apiBase}/api/v1/workspaces`, {
-      headers: authHeaders(),
-    });
-    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-      return await res.json();
-    }
-  } catch {
-    // Fallback to standalone mesh
-  }
-  return [];
+  const res = await fetch(`${getApiBase()}/api/v1/workspaces`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to load workspaces');
+  return res.json();
 }
 
 export async function createWorkspace(name: string, slug?: string): Promise<Workspace> {

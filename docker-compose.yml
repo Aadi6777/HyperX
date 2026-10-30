@@ -17,8 +17,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/migrations/V1__init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
-      - ./database/migrations/V2__activity_and_transfers.sql:/docker-entrypoint-initdb.d/02_activity_and_transfers.sql:ro
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/03_seed.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hyperx_user} -d ${DB_NAME:-hyperx_db}"]
       interval: 5s
@@ -28,7 +27,7 @@ services:
       - hyperx-network
 
   # ===========================================================================
-  # HyperX Backend (Python 3.11 / FastAPI / Asyncpg / Uvicorn)
+  # HyperX Backend (Spring Boot 3.3 / Java 21)
   # ===========================================================================
   backend:
     build:
@@ -40,9 +39,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-hyperx_user}:${DB_PASSWORD:-hyperx_secure_pass_2026}@postgres:5432/${DB_NAME:-hyperx_db}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hyperx_db}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hyperx_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hyperx_secure_pass_2026}
       SERVER_PORT: ${SERVER_PORT:-8080}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-hyperx-ultra-secure-jwt-secret-key-32-bytes-minimum-length-2026}
+      SPRING_FLYWAY_ENABLED: "true"
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
@@ -50,7 +51,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 20s
     networks:
       - hyperx-network
 
