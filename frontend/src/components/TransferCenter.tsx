@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   UploadCloud,
   Lock,
@@ -14,6 +15,7 @@ import {
   RefreshCw,
   X,
   Check,
+  QrCode,
 } from 'lucide-react';
 import { hasWebCrypto } from '../services/cryptoService';
 import { purgeStaleTransfers } from '../services/indexedDbCache';
@@ -21,6 +23,7 @@ import { recordTransfer } from '../services/workspaceService';
 import { WebRtcEngine, PeerInfo, LinkState, SignalingStatus } from '../services/webrtcEngine';
 import { TransferManager, LocalTransfer } from '../services/transferManager';
 import { parseRoomInput, buildInviteLink } from '../services/room';
+import { InviteQrModal } from './InviteQrModal';
 
 export type { LocalTransfer } from '../services/transferManager';
 
@@ -82,12 +85,13 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const secureCrypto = hasWebCrypto();
   const [transfers, setTransfers] = useState<LocalTransfer[]>([]);
   const [encryptEnabled, setEncryptEnabled] = useState(secureCrypto);
-  const [passphrase, setPassphrase] = useState('HyperX-ZeroRAM-Secret-2026');
+  const [passphrase, setPassphrase] = useState('Nexora-ZeroRAM-Secret-2026');
   const [autoAccept, setAutoAccept] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [receiveCodeInput, setReceiveCodeInput] = useState('');
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [uiError, setUiError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -259,6 +263,10 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           {copied ? <Check size={13} /> : <Copy size={13} />}
           <span>{copied ? 'Copied' : 'Copy invite link'}</span>
         </button>
+        <button type="button" className="btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }} onClick={() => setShowQr(true)} aria-label="Show QR code to join this room">
+          <QrCode size={13} />
+          <span>QR code</span>
+        </button>
         <button type="button" className="btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }} onClick={onNewRoom}>
           <RefreshCw size={13} />
           <span>New room</span>
@@ -342,8 +350,11 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         </p>
       </div>
 
+      {showQr && <InviteQrModal roomId={roomId} onClose={() => setShowQr(false)} />}
+
       {/* Join-room modal (Hero "RECEIVE") */}
-      {showReceiveModal && (
+      {showReceiveModal &&
+        createPortal(
         <div style={{
           position: 'fixed',
           inset: 0,
@@ -410,8 +421,9 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+        )}
 
       {/* Active & Completed Transfers List */}
       {transfers.length > 0 && (

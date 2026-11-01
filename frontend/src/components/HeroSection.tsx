@@ -16,7 +16,7 @@ interface HeroSectionProps {
 
 export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend, onSelectReceive }) => {
   return (
-    <section className="hyperlink-hero-deck" aria-label="HyperX System Overview">
+    <section className="hyperlink-hero-deck" aria-label="Nexora System Overview">
       <div className="hyperlink-hero-grid">
         {/* Left Column: Mission Briefing, Typography & Telemetry */}
         <div className="hero-left-column">
@@ -66,7 +66,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend, onSelect
 
               <div className="bench-row hyperx">
                 <div className="bench-row-info">
-                  <span className="bench-label">HyperX Zero-RAM Streamer (50GB File)</span>
+                  <span className="bench-label">Nexora Zero-RAM Streamer (50GB File)</span>
                   <span className="bench-val text-blue">14.6 MB RAM &bull; Flatline Resilient</span>
                 </div>
                 <div className="bench-bar-track">
@@ -79,11 +79,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSelectSend, onSelect
             <div className="hud-micro-grid">
               <div className="hud-micro-cell">
                 <Layers size={14} style={{ color: 'var(--bauhaus-blue)' }} />
-                <span>Slice: <strong>512 KB</strong></span>
+                <span>Slice: <strong>64 KB</strong></span>
               </div>
               <div className="hud-micro-cell">
                 <Cpu size={14} style={{ color: 'var(--bauhaus-yellow)' }} />
-                <span>Limit: <strong>1.0 MB</strong></span>
+                <span>Limit: <strong>4.0 MB</strong></span>
               </div>
               <div className="hud-micro-cell">
                 <HardDrive size={14} style={{ color: 'var(--accent-green)' }} />

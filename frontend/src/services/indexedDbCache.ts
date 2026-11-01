@@ -1,5 +1,5 @@
 /**
- * HyperX Phase 6: Local Chunk Cache
+ * Nexora Phase 6: Local Chunk Cache
  * Persistent IndexedDB chunk assembly & file reconstruction engine.
  * Prevents browser tab RAM exhaustion when receiving multi-gigabyte files.
  */

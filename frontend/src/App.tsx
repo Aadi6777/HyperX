@@ -6,6 +6,7 @@ import { AuthModal } from './components/AuthModal';
 import { WorkspaceBar } from './components/WorkspaceBar';
 import { TransferCenter } from './components/TransferCenter';
 import { CollaborationPanel } from './components/CollaborationPanel';
+import { RoomTools } from './components/RoomTools';
 import { User, fetchCurrentUser, clearSession } from './services/authService';
 import {
   Workspace,
@@ -62,10 +63,10 @@ export const App: React.FC = () => {
       // Fallback workspace for offline/standalone mode
       const fallback: Workspace = {
         id: 'ws_local_demo',
-        name: 'HyperX Primary Cluster',
+        name: 'Nexora Primary Cluster',
         slug: 'primary-cluster',
         ownerId: 'peer_local',
-        ownerName: 'HyperX Operator',
+        ownerName: 'Nexora Operator',
         currentUserRole: 'OWNER',
         memberCount: 2,
         createdAt: new Date().toISOString(),
@@ -182,7 +183,7 @@ export const App: React.FC = () => {
       <nav className="navbar" role="navigation" aria-label="Main Navigation">
         <div className="brand-container">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span className="brand-text">HYPERX</span>
+            <span className="brand-text">NEXORA</span>
             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>
               P2P PIPELINE
             </span>
@@ -279,6 +280,8 @@ export const App: React.FC = () => {
           />
         </div>
 
+        <RoomTools engine={engine} links={links} />
+
         {/* Bespoke 4-Pillar Architectural Matrix with Bauhaus Badges */}
         <ArchitecturePillars />
 
@@ -303,7 +306,7 @@ export const App: React.FC = () => {
             <span className="badge-tag">Production Verified &bull; Supabase</span>
           </div>
 
-          <h3 className="card-title">HyperX Infrastructure Runtime</h3>
+          <h3 className="card-title">Nexora Infrastructure Runtime</h3>
           <p className="card-desc">
             Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
           </p>
@@ -341,7 +344,7 @@ Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
           <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span style={{ fontWeight: 900, letterSpacing: '-0.02em', fontSize: '1.2rem', color: '#fff', textTransform: 'uppercase' }}>
-                HYPERX
+                NEXORA
               </span>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>&bull; E2E Encrypted P2P Transfer &bull; Zero-RAM Browser Streaming</span>
             </div>

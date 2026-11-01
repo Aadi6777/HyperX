@@ -71,7 +71,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               <ShieldCheck size={20} />
             </div>
             <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>
-              {isRegister ? 'Create HyperX Account' : 'Peer Sign-In'}
+              {isRegister ? 'Create Nexora Account' : 'Peer Sign-In'}
             </h3>
           </div>
           <button className="btn-icon" onClick={onClose} aria-label="Close modal">

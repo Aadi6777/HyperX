@@ -1,5 +1,5 @@
 /**
- * HyperX Phase 5 & 7: Zero-RAM Chunk Engine & Resumable Transfer Protocol
+ * Nexora Phase 5 & 7: Zero-RAM Chunk Engine & Resumable Transfer Protocol
  * Streams files chunk-by-chunk with real backpressure, bitmask (range) recovery, and optional
  * client-side AES-256-GCM encryption.
  *

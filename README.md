@@ -1,25 +1,25 @@
-# HyperX
+# Nexora
 
-> Process of HyperX
+> Process of Nexora
 
 ---
 
-### The Problem HyperX Solves
+### The Problem Nexora Solves
 
 Most web apps choke and crash when you drag and drop a large file. The browser tries to buffer the entire file into JavaScript memory (RAM), causing the tab to freeze, stutter, or outright crash with `Out of Memory` errors.
 
 On top of that, traditional cloud storage services require uploading massive multi-gigabyte files to centralized servers first, paying high bandwidth costs, waiting twice for uploads and downloads, and creating privacy concerns.
 
-**HyperX** takes a different approach:
+**Nexora** takes a different approach:
 - Files stream **directly between browsers peer-to-peer** via WebRTC DataChannels.
 - The browser reads files slice-by-slice as sequential byte streams (`ReadableStream` & `WritableStream`), immediately feeding chunks into local `IndexedDB` storage with active backpressure control.
 - Even if you stream **50GB+** files, browser RAM consumption stays flat and negligible.
 
 ---
 
-### The Engineering Process of HyperX
+### The Engineering Process of Nexora
 
-We build HyperX step-by-step across 10 disciplined phases to ensure every layer is resilient, battle-tested, and interview-ready:
+We build Nexora step-by-step across 10 disciplined phases to ensure every layer is resilient, battle-tested, and interview-ready:
 
 ```
 [Phase 1]  🟢 Foundation & Setup        (Spring Boot 3.3, React 18 + TS, PostgreSQL, Flyway V1)
@@ -121,6 +121,16 @@ npm run dev
 
 Both sides need the **same encryption passphrase** (or turn encryption off). A mismatch is reported as an error instead of producing a corrupt file.
 
+### Nexora extras (all peer-to-peer, nothing stored on a server)
+
+| Feature | What it does | Where the code is |
+|---|---|---|
+| **QR join** | The **QR code** button next to the room code shows the invite link as a QR. A phone camera scan opens Nexora already inside that room. (On `localhost` a phone can't connect - use your deployed URL.) | `components/InviteQrModal.tsx` |
+| **Shared clipboard** | Paste a link/snippet and push it to every device in the room; one-tap Copy, links get an Open button. Items live only in memory. | `services/roomSync.ts` (`ClipboardSync`) |
+| **Live notes (CRDT)** | A shared notepad everyone edits at once. Edits merge automatically with no server and no conflicts, even with simultaneous typing or a peer who reconnects later. | `services/crdtDoc.ts` (the CRDT), `services/roomSync.ts` (`NotesSync`) |
+
+**How the notes CRDT works (RGA):** every character is a node with a unique id `counter@peer` (a Lamport clock). An insert says "put me after node X"; a delete just marks a node as a tombstone. Concurrent inserts at the same spot are ordered by id, which every peer computes identically, so all replicas end up with the same text. Operations that arrive before the ones they depend on wait in a buffer. When a link opens, peers swap full state and merge it, so late joiners and reconnecting peers catch up automatically. If every peer closes the page, the notes are gone - download them first.
+
 ### Troubleshooting
 
 | Symptom | Cause / fix |
@@ -134,7 +144,7 @@ Both sides need the **same encryption passphrase** (or turn encryption off). A m
 
 ### Deploying the Frontend to Vercel
 
-HyperX is pre-configured with root and nested `vercel.json` configurations:
+Nexora is pre-configured with root and nested `vercel.json` configurations:
 
 1. Import the repository `https://github.com/Aadi6777/HyperX` in your **Vercel Dashboard**.
 2. Select `frontend` as the root directory (or keep the default root, which automatically runs `cd frontend && npm install && npm run build`).

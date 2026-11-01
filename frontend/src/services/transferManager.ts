@@ -1,5 +1,5 @@
 /**
- * HyperX transfer protocol (runs on top of WebRtcEngine's data channels).
+ * Nexora transfer protocol (runs on top of WebRtcEngine's data channels).
  *
  *   sender                                          receiver
  *   ------                                          --------
@@ -121,12 +121,13 @@ export class TransferManager {
   private declined = new Set<string>();
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private unsubscribe: () => void = () => undefined;
 
   constructor(
     private readonly engine: WebRtcEngine,
     private readonly opts: TransferManagerOptions
   ) {
-    engine.setCallbacks({
+    this.unsubscribe = engine.subscribe({
       onControl: (peerId, msg) => this.handleControl(peerId, msg),
       onFrame: (peerId, frame) => this.handleFrame(peerId, frame),
       onLinkOpen: (peerId) => this.handleLinkOpen(peerId),
@@ -140,12 +141,7 @@ export class TransferManager {
     for (const rec of this.records.values()) {
       rec.streams.forEach((c) => (c.cancelled = true));
     }
-    this.engine.setCallbacks({
-      onControl: undefined,
-      onFrame: undefined,
-      onLinkOpen: undefined,
-      onLinkClosed: undefined,
-    });
+    this.unsubscribe();
   }
 
   /* ---------------------------------------------------------------- state */

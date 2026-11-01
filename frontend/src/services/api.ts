@@ -15,7 +15,7 @@ export interface ClientProbeCapabilities {
 }
 
 /**
- * Fetch health status from HyperX backend.
+ * Fetch health status from Nexora backend.
  * Falls back gracefully to diagnostics if backend is starting or offline.
  */
 export async function fetchBackendHealth(): Promise<HealthResponse> {
@@ -45,7 +45,7 @@ export async function fetchBackendHealth(): Promise<HealthResponse> {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return {
       status: 'STANDALONE_MODE',
-      service: 'HyperX Web Client',
+      service: 'Nexora Web Client',
       version: '1.0.0-client',
       database: `BACKEND_UNREACHABLE (${message})`,
       timestamp: new Date().toISOString(),
@@ -54,7 +54,7 @@ export async function fetchBackendHealth(): Promise<HealthResponse> {
 }
 
 /**
- * Inspect browser capabilities for HyperX Zero-RAM P2P engine.
+ * Inspect browser capabilities for Nexora Zero-RAM P2P engine.
  */
 export function probeBrowserCapabilities(): ClientProbeCapabilities {
   const hasWindow = typeof window !== 'undefined';

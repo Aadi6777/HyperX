@@ -1,5 +1,5 @@
 /**
- * HyperX Phase 8: End-to-End Encryption Engine
+ * Nexora Phase 8: End-to-End Encryption Engine
  * Client-side AES-256-GCM + PBKDF2 key derivation and SHA-256 integrity verification.
  */
 

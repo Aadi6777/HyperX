@@ -1,5 +1,5 @@
 /**
- * HyperX Phase 4 & 9: WebRTC Signaling Engine & Peer Collaboration
+ * Nexora Phase 4 & 9: WebRTC Signaling Engine & Peer Collaboration
  * Coordinates STUN/TURN, SDP offer/answer exchange over the WebSocket signaling server, and the
  * RTCDataChannel mesh that carries control messages + file chunks between browsers.
  *
@@ -29,6 +29,14 @@ export type LinkState = 'connecting' | 'open';
 export interface ControlMessage {
   t: string;
   [key: string]: unknown;
+}
+
+/** Data-channel events a feature can subscribe to via WebRtcEngine.subscribe(). */
+export interface LinkListener {
+  onLinkOpen?: (peerId: string) => void;
+  onLinkClosed?: (peerId: string) => void;
+  onControl?: (peerId: string, msg: ControlMessage) => void;
+  onFrame?: (peerId: string, frame: ArrayBuffer) => void;
 }
 
 export type WebRtcEventCallback = {
@@ -133,6 +141,9 @@ export class WebRtcEngine {
   private signalQueue: Promise<void> = Promise.resolve();
 
   private callbacks: WebRtcEventCallback = {};
+  // Features (file transfer, shared clipboard, CRDT notes) each subscribe independently, so none
+  // of them can overwrite another's handlers.
+  private listeners = new Set<LinkListener>();
   private readonly iceServers = buildIceServers();
 
   public readonly peerId: string;
@@ -148,6 +159,31 @@ export class WebRtcEngine {
 
   public setCallbacks(cbs: WebRtcEventCallback) {
     this.callbacks = { ...this.callbacks, ...cbs };
+  }
+
+  /** Subscribe to data-channel events. Returns an unsubscribe function. */
+  public subscribe(listener: LinkListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private fireLinkOpen(peerId: string) {
+    this.callbacks.onLinkOpen?.(peerId);
+    this.listeners.forEach((l) => l.onLinkOpen?.(peerId));
+  }
+  private fireLinkClosed(peerId: string) {
+    this.fireLinkClosed(peerId);
+    this.listeners.forEach((l) => l.onLinkClosed?.(peerId));
+  }
+  private fireControl(peerId: string, msg: ControlMessage) {
+    this.callbacks.onControl?.(peerId, msg);
+    this.listeners.forEach((l) => l.onControl?.(peerId, msg));
+  }
+  private fireFrame(peerId: string, frame: ArrayBuffer) {
+    this.callbacks.onFrame?.(peerId, frame);
+    this.listeners.forEach((l) => l.onFrame?.(peerId, frame));
   }
 
   public get signalingUrl(): string {
@@ -463,13 +499,13 @@ export class WebRtcEngine {
       this.dataChannels.set(targetPeerId, channel);
       this.relinkAttempts.delete(targetPeerId);
       this.setLink(targetPeerId, 'open');
-      this.callbacks.onLinkOpen?.(targetPeerId);
+      this.fireLinkOpen(targetPeerId);
     };
 
     channel.onclose = () => {
       if (this.dataChannels.get(targetPeerId) === channel) {
         this.dataChannels.delete(targetPeerId);
-        this.callbacks.onLinkClosed?.(targetPeerId);
+        this.fireLinkClosed(targetPeerId);
         this.handleLinkDown(targetPeerId, pc);
       }
     };
@@ -482,12 +518,12 @@ export class WebRtcEngine {
       if (typeof event.data === 'string') {
         try {
           const msg = JSON.parse(event.data) as ControlMessage;
-          this.callbacks.onControl?.(targetPeerId, msg);
+          this.fireControl(targetPeerId, msg);
         } catch (e) {
           console.error('Failed to parse control message:', e);
         }
       } else if (event.data instanceof ArrayBuffer) {
-        this.callbacks.onFrame?.(targetPeerId, event.data);
+        this.fireFrame(targetPeerId, event.data);
       }
     };
   }
@@ -510,7 +546,7 @@ export class WebRtcEngine {
     }
     if (channel) {
       channel.onopen = channel.onclose = channel.onerror = channel.onmessage = null;
-      this.callbacks.onLinkClosed?.(peerId);
+      this.fireLinkClosed(peerId);
     }
     this.setLink(peerId, null);
   }
@@ -540,7 +576,7 @@ export class WebRtcEngine {
   private async initiateCall(targetPeerId: string) {
     this.closePeer(targetPeerId); // replace any stale link
     const pc = this.createPeerConnection(targetPeerId);
-    const channel = pc.createDataChannel('hyperx-channel', { ordered: true });
+    const channel = pc.createDataChannel('nexora-channel', { ordered: true });
     this.setupDataChannel(targetPeerId, pc, channel);
 
     const offer = await pc.createOffer();
