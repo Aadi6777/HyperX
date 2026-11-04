@@ -126,3 +126,4 @@ export function setRuntimeSignalingUrl(url: string): void {
     localStorage.removeItem(STORAGE_KEY_SIGNALING);
   }
 }
+

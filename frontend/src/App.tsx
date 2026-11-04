@@ -194,7 +194,7 @@ export const App: React.FC = () => {
         <div className="nav-telemetry-badge hidden-mobile">
           <span className="pill-dot-pulse" />
           <span style={{ color: 'var(--text-secondary)' }}>
-            STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--bauhaus-yellow)' }}>{signalingStatus}</strong>
+            STATUS: <strong style={{ color: signalingStatus === 'CONNECTED' ? 'var(--accent-green)' : 'var(--accent-magenta)' }}>{signalingStatus}</strong>
           </span>
           <span className="telemetry-separator">|</span>
           <span style={{ color: 'var(--text-muted)' }}>REGION: <strong>ap-south-1</strong></span>
@@ -205,8 +205,8 @@ export const App: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {currentUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
-                <UserCircle size={18} color="var(--bauhaus-blue)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                <UserCircle size={18} color="var(--accent-light-blue)" />
                 <span style={{ fontWeight: 600 }}>{currentUser.fullName}</span>
                 <span className="badge-tag" style={{ fontSize: '0.65rem' }}>{currentUser.role}</span>
               </div>
@@ -320,7 +320,7 @@ export const App: React.FC = () => {
             border: '1px solid var(--border-subtle)',
             overflowX: 'auto',
             fontSize: '0.85rem',
-            color: '#38bdf8',
+            color: '#527b5fff',
             fontFamily: 'var(--font-mono)'
           }}>
 {`# 1. Start Spring Boot Backend Connected to Supabase

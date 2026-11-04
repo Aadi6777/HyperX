@@ -205,8 +205,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     <section className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.45rem', color: '#fff', margin: '0 0 0.3rem 0', display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
-            <HardDrive size={24} style={{ color: 'var(--bauhaus-blue)' }} />
+          <h2 style={{ fontSize: '1.45rem', color: 'var(--text-primary)', margin: '0 0 0.3rem 0', display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
+            <HardDrive size={24} style={{ color: 'var(--accent-light-blue)' }} />
             Zero-RAM P2P Streaming Engine
           </h2>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -215,15 +215,15 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         </div>
 
         {/* E2E Encryption Toggle & Passphrase */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#f8fafc', padding: '0.5rem 0.8rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
           <button
             type="button"
             disabled={!secureCrypto}
             title={secureCrypto ? 'Toggle end-to-end encryption' : 'Encryption needs HTTPS or localhost (WebCrypto is unavailable on plain http://)'}
             onClick={() => setEncryptEnabled(!encryptEnabled)}
             style={{
-              background: encryptEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              border: `1px solid ${encryptEnabled ? 'var(--accent-green)' : 'rgba(255, 255, 255, 0.2)'}`,
+              background: encryptEnabled ? 'rgba(16, 185, 129, 0.15)' : '#ffffff',
+              border: `1px solid ${encryptEnabled ? 'var(--accent-green)' : '#cbd5e1'}`,
               color: encryptEnabled ? 'var(--accent-green)' : 'var(--text-muted)',
               padding: '0.35rem 0.65rem',
               borderRadius: '4px',
@@ -248,10 +248,11 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
               placeholder="Encryption Passphrase"
               title="Both sides must use the SAME passphrase"
               style={{
-                background: 'transparent',
-                border: 'none',
-                borderBottom: '1px dashed rgba(255, 255, 255, 0.25)',
-                color: 'var(--bauhaus-yellow)',
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '4px',
+                padding: '0.2rem 0.5rem',
+                color: 'var(--accent-magenta)',
                 fontSize: '0.75rem',
                 outline: 'none',
                 width: '180px',
@@ -275,9 +276,9 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       </div>
 
       {/* Room / peers bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.7rem 0.9rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', background: '#f8fafc', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.7rem 0.9rem', marginBottom: '1.25rem' }}>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}>ROOM</span>
-        <code style={{ color: 'var(--bauhaus-yellow)', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.08em' }}>{roomId}</code>
+        <code style={{ color: 'var(--accent-magenta)', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.08em' }}>{roomId}</code>
         <button type="button" className="btn-ghost" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }} onClick={copyInvite}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
           <span>{copied ? 'Copied' : 'Copy invite link'}</span>
@@ -393,12 +394,12 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         }}
         onClick={() => fileInputRef.current?.click()}
         style={{
-          border: '2px dashed var(--bauhaus-blue)',
+          border: '2px dashed var(--accent-light-blue)',
           borderRadius: '8px',
           padding: '2.5rem 1.5rem',
           textAlign: 'center',
           cursor: 'pointer',
-          background: isDragging ? 'rgba(0, 71, 255, 0.12)' : 'rgba(0, 0, 0, 0.3)',
+          background: isDragging ? 'rgba(14, 165, 233, 0.12)' : '#f8fafc',
           transition: 'all 0.25s ease',
         }}
       >
@@ -410,11 +411,11 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           onChange={(e) => handleFiles(e.target.files)}
         />
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'var(--bauhaus-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '4px 4px 0px rgba(255,255,255,0.15)' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'var(--accent-light-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)' }}>
             <UploadCloud size={26} />
           </div>
         </div>
-        <h4 style={{ margin: '0 0 0.35rem 0', color: '#fff', fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
+        <h4 style={{ margin: '0 0 0.35rem 0', color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em' }}>
           Drop files to offer them peer-to-peer
         </h4>
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -488,15 +489,15 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
           padding: '1rem',
         }}>
           <div style={{
-            background: 'var(--bg-card)',
+            background: '#ffffff',
             border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '2rem',
             maxWidth: '440px',
             width: '100%',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
           }}>
-            <h3 style={{ fontSize: '1.3rem', fontWeight: 900, color: '#fff', margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>
               Join a sender&apos;s room
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
@@ -511,10 +512,10 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
               style={{
                 width: '100%',
                 padding: '0.75rem 1rem',
-                background: 'rgba(0,0,0,0.5)',
-                border: '1px solid var(--border-subtle)',
+                background: '#f8fafc',
+                border: '1px solid #cbd5e1',
                 borderRadius: '4px',
-                color: '#fff',
+                color: 'var(--text-primary)',
                 fontFamily: 'var(--font-mono)',
                 fontSize: '0.95rem',
                 marginBottom: '1.25rem',
@@ -528,7 +529,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
               <button
                 type="button"
                 className="btn-hyper-nav"
-                style={{ background: 'var(--bauhaus-red)' }}
+                style={{ background: 'var(--accent-magenta)' }}
                 onClick={() => {
                   const code = parseRoomInput(receiveCodeInput);
                   if (code) {
@@ -550,7 +551,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       {transfers.length > 0 && (
         <div style={{ marginTop: '2rem' }}>
           <h4 style={{ fontSize: '0.95rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            <Cpu size={16} style={{ color: 'var(--bauhaus-blue)' }} />
+            <Cpu size={16} style={{ color: 'var(--accent-light-blue)' }} />
             Active Transfer Streams ({transfers.length})
           </h4>
 
@@ -562,31 +563,32 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                 <div
                   key={t.fileId}
                   style={{
-                    background: 'rgba(10, 10, 26, 0.75)',
-                    border: `1px solid ${failed ? 'var(--bauhaus-red)' : 'var(--border-subtle)'}`,
+                    background: '#ffffff',
+                    border: `1px solid ${failed ? 'var(--accent-magenta)' : 'var(--border-subtle)'}`,
                     borderRadius: '8px',
                     padding: '1.25rem',
                     position: 'relative',
                     overflow: 'hidden',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 800, color: '#fff', fontSize: '1rem' }}>{t.fileName}</span>
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '1rem' }}>{t.fileName}</span>
                         <span className="badge-tag" style={{ fontSize: '0.7rem' }}>{formatBytes(t.fileSize)}</span>
                         <span
                           className="badge-tag"
                           style={{
                             fontSize: '0.7rem',
-                            background: t.direction === 'SEND' ? 'rgba(0, 71, 255, 0.15)' : 'rgba(255, 46, 0, 0.15)',
-                            borderColor: t.direction === 'SEND' ? 'var(--bauhaus-blue)' : 'var(--bauhaus-red)',
-                            color: '#fff',
+                            background: t.direction === 'SEND' ? 'rgba(14, 165, 233, 0.12)' : 'rgba(217, 70, 239, 0.12)',
+                            borderColor: t.direction === 'SEND' ? 'var(--accent-light-blue)' : 'var(--accent-magenta)',
+                            color: t.direction === 'SEND' ? 'var(--accent-light-blue)' : 'var(--accent-magenta)',
                           }}
                         >
                           {t.direction === 'SEND' ? 'OUTGOING (SEND)' : `INCOMING FROM ${t.senderName || 'PEER'}`}
                         </span>
-                        <span className="badge-tag" style={{ fontSize: '0.7rem', color: done ? 'var(--accent-green)' : failed ? 'var(--bauhaus-red)' : '#fff' }}>
+                        <span className="badge-tag" style={{ fontSize: '0.7rem', color: done ? 'var(--accent-green)' : failed ? 'var(--accent-magenta)' : 'var(--text-primary)' }}>
                           {statusLabel(t)}
                         </span>
                         {t.isEncrypted && (
@@ -679,12 +681,12 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                   </div>
 
                   {/* Progress Bar */}
-                  <div style={{ background: 'rgba(0, 0, 0, 0.5)', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.75rem' }}>
+                  <div style={{ background: '#e2e8f0', borderRadius: '4px', height: '6px', overflow: 'hidden', marginBottom: '0.75rem' }}>
                     <div
                       style={{
                         height: '100%',
                         width: `${t.percentage}%`,
-                        background: done ? 'var(--accent-green)' : 'linear-gradient(90deg, var(--bauhaus-blue), var(--bauhaus-yellow))',
+                        background: done ? 'var(--accent-green)' : 'linear-gradient(90deg, var(--accent-light-blue), var(--accent-magenta))',
                         transition: 'width 0.15s ease',
                       }}
                     />
@@ -694,7 +696,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                   <div style={{ marginTop: '0.5rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontFamily: 'var(--font-mono)' }}>
                       <span>Chunk Transmission Map ({t.totalChunks} chunks)</span>
-                      <span style={{ color: done ? 'var(--accent-green)' : '#fff', fontWeight: 700 }}>
+                      <span style={{ color: done ? 'var(--accent-green)' : 'var(--text-primary)', fontWeight: 700 }}>
                         {done
                           ? t.direction === 'RECEIVE' ? '100% STORED IN INDEXEDDB' : '100% DELIVERED'
                           : `${t.percentage}% ${t.direction === 'SEND' ? 'SENT' : 'RECEIVED'}`}
@@ -707,7 +709,7 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
                           style={{
                             height: '8px',
                             borderRadius: '1px',
-                            background: v >= 1 ? 'var(--bauhaus-blue)' : v > 0 ? 'rgba(0, 71, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                            background: v >= 1 ? 'var(--accent-light-blue)' : v > 0 ? 'rgba(14, 165, 233, 0.45)' : '#e2e8f0',
                             transition: 'background 0.2s',
                           }}
                         />

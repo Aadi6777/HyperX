@@ -212,9 +212,9 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Live CRDT Scratchpad &bull; Last edited by: <strong style={{ color: '#fff' }}>{crdtLastModifier}</strong>
+              Live CRDT Scratchpad &bull; Last edited by: <strong style={{ color: 'var(--text-primary)' }}>{crdtLastModifier}</strong>
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: isSaved ? '#10b981' : 'var(--bauhaus-yellow)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: isSaved ? '#10b981' : 'var(--accent-magenta)' }}>
               {isSaved ? <Check size={12} /> : <Save size={12} />}
               {isSaved ? 'Synced to MongoDB' : 'Syncing...'}
             </span>
@@ -227,11 +227,11 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
             style={{
               width: '100%',
               height: '240px',
-              background: 'rgba(0, 0, 0, 0.4)',
+              background: '#f8fafc',
               border: '1px solid var(--border-subtle)',
               borderRadius: '8px',
               padding: '0.85rem',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               fontFamily: 'var(--font-mono)',
               fontSize: '0.84rem',
               lineHeight: '1.5',
@@ -266,21 +266,21 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
                 <div
                   key={msg.id}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    background: '#f8fafc',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '8px',
                     padding: '0.6rem 0.8rem',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--cyan-glow)' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-light-blue)' }}>
                       {msg.senderName}
                     </span>
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: '#e2e8f0', wordBreak: 'break-word' }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
                     {msg.text}
                   </div>
                 </div>

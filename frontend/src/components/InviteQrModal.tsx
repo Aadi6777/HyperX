@@ -53,37 +53,37 @@ export const InviteQrModal: React.FC<InviteQrModalProps> = ({ roomId, onClose })
       aria-modal="true"
       aria-label="Invite by QR code"
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(5,5,17,0.85)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '1.75rem', maxWidth: '400px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.8)', textAlign: 'center' }}
+        style={{ background: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '1.75rem', maxWidth: '400px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', textAlign: 'center' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: '#fff', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Smartphone size={18} style={{ color: 'var(--bauhaus-blue)' }} />
+          <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-primary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Smartphone size={18} style={{ color: 'var(--accent-light-blue)' }} />
             Scan to join room
           </h3>
-          <button type="button" onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
             <X size={18} />
           </button>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '10px', display: 'inline-block', minWidth: 240, minHeight: 240 }}>
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', display: 'inline-block', minWidth: 240, minHeight: 240 }}>
           {dataUrl ? (
             <img src={dataUrl} alt={`QR code to join room ${roomId}`} width={240} height={240} style={{ display: 'block' }} data-testid="invite-qr" />
           ) : (
-            <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '0.8rem' }}>
+            <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.8rem' }}>
               {error ?? 'Generating…'}
             </div>
           )}
         </div>
 
-        <div style={{ margin: '0.9rem 0 0.4rem', fontFamily: 'var(--font-mono)', color: 'var(--bauhaus-yellow)', fontWeight: 800, letterSpacing: '0.1em' }}>{roomId}</div>
+        <div style={{ margin: '0.9rem 0 0.4rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-magenta)', fontWeight: 800, letterSpacing: '0.1em' }}>{roomId}</div>
         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', wordBreak: 'break-all', marginBottom: '0.9rem' }}>{link}</div>
 
         {isLocal && (
-          <div style={{ background: 'rgba(255,200,0,0.1)', border: '1px solid var(--bauhaus-yellow)', borderRadius: '6px', padding: '0.55rem 0.7rem', fontSize: '0.75rem', color: '#fff', marginBottom: '0.9rem', textAlign: 'left' }}>
+          <div style={{ background: 'rgba(217, 70, 239, 0.08)', border: '1px solid var(--accent-magenta)', borderRadius: '6px', padding: '0.55rem 0.7rem', fontSize: '0.75rem', color: 'var(--text-primary)', marginBottom: '0.9rem', textAlign: 'left' }}>
             You're on <code>{host}</code>, which a phone can't reach. Open Nexora through your deployed URL (or your computer's
             network address) and the QR code will work from other devices.
           </div>
