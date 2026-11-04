@@ -342,20 +342,20 @@ Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
           <div className="ribbon-red" />
           <div className="ribbon-yellow" />
         </div>
-        <div style={{ background: '#0a0a1a', borderTop: '1px solid var(--border-subtle)', padding: '1.75rem 2rem' }}>
+        <div style={{ background: '#ffffff', borderTop: '1px solid var(--border-subtle)', padding: '1.75rem 2rem' }}>
           <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span style={{ fontWeight: 900, letterSpacing: '-0.02em', fontSize: '1.2rem', color: '#fff', textTransform: 'uppercase' }}>
+              <span style={{ fontWeight: 900, letterSpacing: '-0.02em', fontSize: '1.2rem', color: '#0f172a', textTransform: 'uppercase' }}>
                 NEXORA
               </span>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>&bull; E2E Encrypted P2P Transfer &bull; Zero-RAM Browser Streaming</span>
             </div>
 
             <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
                 E2E ENCRYPTED P2P TRANSFER
               </div>
-              <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                 v2.0.0 &bull; Node.js + MongoDB
               </div>
             </div>
