@@ -162,6 +162,22 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
     }
   };
 
+  const createSyntheticTestFile = (sizeBytes: number, name: string) => {
+    try {
+      // 1 MB template slice reused by reference (O(1) memory)
+      const mbSlice = new Uint8Array(1024 * 1024);
+      for (let i = 0; i < mbSlice.length; i++) mbSlice[i] = (i * 7) % 256;
+      const mbCount = Math.max(1, Math.round(sizeBytes / (1024 * 1024)));
+      const parts: Uint8Array[] = new Array(mbCount);
+      for (let i = 0; i < mbCount; i++) parts[i] = mbSlice;
+      const blob = new Blob(parts, { type: 'application/octet-stream' });
+      const syntheticFile = new File([blob], name, { type: 'application/octet-stream', lastModified: Date.now() });
+      handleFiles([syntheticFile]);
+    } catch (err) {
+      setUiError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const run = async (fn: () => Promise<void> | void) => {
     try {
       setUiError(null);
@@ -404,6 +420,55 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
           Receivers accept the file, then it streams straight from your disk in 64KB chunks with backpressure - nothing is uploaded to a server.
         </p>
+
+        {/* Quick Heavy Benchmark Generators */}
+        <div
+          style={{
+            marginTop: '1.25rem',
+            paddingTop: '0.85rem',
+            borderTop: '1px dashed rgba(255, 255, 255, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            flexWrap: 'wrap',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>Quick Benchmark:</span>
+          <button
+            type="button"
+            onClick={() => createSyntheticTestFile(100 * 1024 * 1024, 'benchmark_100MB.bin')}
+            className="btn-ghost"
+            style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            + 100 MB
+          </button>
+          <button
+            type="button"
+            onClick={() => createSyntheticTestFile(1 * 1024 * 1024 * 1024, 'benchmark_1GB.bin')}
+            className="btn-ghost"
+            style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            + 1 GB
+          </button>
+          <button
+            type="button"
+            onClick={() => createSyntheticTestFile(5 * 1024 * 1024 * 1024, 'benchmark_5GB.bin')}
+            className="btn-ghost"
+            style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            + 5 GB
+          </button>
+          <button
+            type="button"
+            onClick={() => createSyntheticTestFile(30 * 1024 * 1024 * 1024, 'benchmark_30GB_heavy.bin')}
+            className="btn-ghost"
+            style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', borderRadius: '4px', border: '1px solid var(--bauhaus-blue)', color: '#38bdf8', fontWeight: 700 }}
+          >
+            ⚡ + 30 GB Ultra-Heavy
+          </button>
+        </div>
       </div>
 
       {showQr && <InviteQrModal roomId={roomId} onClose={() => setShowQr(false)} />}
