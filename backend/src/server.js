@@ -70,7 +70,7 @@ async function startServer() {
 
   server.listen(PORT, HOST, () => {
     console.log('===========================================================');
-    console.log(`🚀 HyperX MERN Backend Server running on http://${HOST}:${PORT}`);
+    console.log(`🚀 HyperX Backend Server running on http://${HOST}:${PORT}`);
     console.log(`   - REST Health:       http://localhost:${PORT}/api/v1/health`);
     console.log(`   - REST Auth:         http://localhost:${PORT}/api/v1/auth`);
     console.log(`   - REST Rooms:        http://localhost:${PORT}/api/v1/rooms`);

@@ -44,7 +44,7 @@ HyperX is built on a modern high-performance full-stack architecture:
 
 | Feature | HyperLink (Friend's Reference) | **HyperX (Our Project)** |
 | :--- | :--- | :--- |
-| **Tech Stack** | Next.js 15 + Supabase (PostgreSQL) + PeerJS | **Pure MERN Stack (MongoDB, Express, React, Node.js)** |
+| **Tech Stack** | Next.js 15 + Supabase (PostgreSQL) + PeerJS | **Node.js, Express, MongoDB & React Native Engine** |
 | **WebRTC Core** | Third-party PeerJS library wrapper | **Pure Native `RTCPeerConnection` with Perfect Negotiation** |
 | **Symmetric NAT Handling** | None (Fails/aborts if direct P2P fails) | **Automatic WebSocket Signaling Relay Fallback (Zero Aborts)** |
 | **Collaboration** | Single 1-to-1 file drop only | **Multi-Peer Swarm + Real-time Collaborative CRDT Scratchpad** |

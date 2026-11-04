@@ -31,7 +31,7 @@ services:
     environment:
       MONGODB_URI: mongodb://mongo:27017/hyperx
       SERVER_PORT: ${SERVER_PORT:-8080}
-      JWT_SECRET: ${JWT_SECRET:-hyperx-mern-secret-key-32-chars-minimum-2026}
+      JWT_SECRET: ${JWT_SECRET:-hyperx-secret-key-32-chars-minimum-2026}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:

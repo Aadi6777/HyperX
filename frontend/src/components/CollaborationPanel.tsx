@@ -87,7 +87,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
       engine.sendCrdtUpdate(newVal, crdtTitle);
     }
 
-    // 2. Debounced save to MongoDB / MERN backend
+    // 2. Debounced save to backend MongoDB service
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveCrdtDoc(effectiveRoomId, {

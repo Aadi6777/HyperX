@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
 import { isConnectedToMongo, inMemoryStore } from '../config/db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'hyperx-mern-secret-key-32-chars-minimum-2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'hyperx-secret-key-32-chars-minimum-2026';
 
 export function signToken(user) {
   return jwt.sign(
