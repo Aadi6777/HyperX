@@ -9,6 +9,8 @@
 
 import { LOW_WATERMARK } from './chunkEngine';
 
+import { getRuntimeSignalingUrl } from '../config/runtimeConfig';
+
 export interface PeerInfo {
   peerId: string;
   peerName: string;
@@ -114,14 +116,7 @@ export function buildIceServers(): RTCIceServer[] {
  * Note: Vercel cannot host or proxy WebSockets, so a Vercel build MUST set #1 or #2.
  */
 export function resolveSignalingUrl(): string {
-  const explicit = import.meta.env.VITE_SIGNALING_URL;
-  if (explicit) return explicit;
-
-  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
-  if (base) return base.replace(/^http/, 'ws') + '/ws/signaling';
-
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws/signaling`;
+  return getRuntimeSignalingUrl();
 }
 
 const PING_INTERVAL_MS = 25_000; // keeps idle WebSockets alive through proxies/tunnels (often 60s)
@@ -225,6 +220,13 @@ export class WebRtcEngine {
     for (const id of [...this.peerConnections.keys()]) this.closePeer(id);
     this.roomPeers.clear();
     this.pendingCandidates.clear();
+  }
+
+  public reconnectWithUrl(serverUrl?: string) {
+    const roomId = this.currentWorkspaceId || 'default';
+    this.disconnect();
+    this.closedByUser = false;
+    this.connect(roomId, serverUrl);
   }
 
   private setStatus(status: SignalingStatus) {

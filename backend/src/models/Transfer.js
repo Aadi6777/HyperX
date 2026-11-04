@@ -69,3 +69,4 @@ const transferSchema = new mongoose.Schema({
 });
 
 export const Transfer = mongoose.model('Transfer', transferSchema);
+

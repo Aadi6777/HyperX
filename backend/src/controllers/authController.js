@@ -162,3 +162,4 @@ export async function getMe(req, res) {
     createdAt: req.user.createdAt || new Date().toISOString()
   });
 }
+

@@ -1,3 +1,5 @@
+import { getRuntimeApiBase } from '../config/runtimeConfig';
+
 export interface HealthResponse {
   status: string;
   service: string;
@@ -19,7 +21,7 @@ export interface ClientProbeCapabilities {
  * Falls back gracefully to diagnostics if backend is starting or offline.
  */
 export async function fetchBackendHealth(): Promise<HealthResponse> {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const baseUrl = getRuntimeApiBase();
   const endpoint = `${baseUrl}/api/v1/health`;
 
   const controller = new AbortController();

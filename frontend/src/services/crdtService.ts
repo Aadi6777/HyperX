@@ -1,4 +1,5 @@
 import { getStoredToken } from './authService';
+import { getRuntimeApiBase } from '../config/runtimeConfig';
 
 export interface CrdtDocument {
   roomId: string;
@@ -10,17 +11,7 @@ export interface CrdtDocument {
   updatedAt: string;
 }
 
-const getApiBase = () => {
-  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
-  if (base) return base;
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host)) {
-      return `http://${host}:8080`;
-    }
-  }
-  return '';
-};
+const getApiBase = () => getRuntimeApiBase();
 
 export async function fetchCrdtDoc(roomId: string): Promise<CrdtDocument | null> {
   const token = getStoredToken();
@@ -61,3 +52,4 @@ export async function saveCrdtDoc(
     return null;
   }
 }
+

@@ -8,3 +8,4 @@ router.get('/:roomId', optionalAuthMiddleware, getCrdtDoc);
 router.post('/:roomId', optionalAuthMiddleware, updateCrdtDoc);
 
 export default router;
+

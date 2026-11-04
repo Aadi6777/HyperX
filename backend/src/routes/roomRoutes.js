@@ -10,3 +10,4 @@ router.get('/:id/members', optionalAuthMiddleware, getMembers);
 router.post('/:id/members', optionalAuthMiddleware, addMember);
 
 export default router;
+

@@ -137,3 +137,4 @@ export async function getActivityLogs(req, res) {
     return res.status(500).json({ message: 'Error fetching activity logs', error: err.message });
   }
 }
+

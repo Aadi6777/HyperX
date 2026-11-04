@@ -30,13 +30,18 @@ export function parseRoomInput(raw: string): string {
   return /^[A-Za-z0-9]{4,12}$/.test(candidate) ? candidate.toUpperCase() : candidate;
 }
 
+import { getRuntimeApiBase } from '../config/runtimeConfig';
+
 export function getRoomFromHash(): string {
   const m = window.location.hash.match(/room=([A-Za-z0-9_-]+)/);
   return m ? m[1] : '';
 }
 
 export function writeRoomToHash(roomId: string) {
-  window.history.replaceState(null, '', `#room=${roomId}`);
+  const currentHash = window.location.hash;
+  const backendMatch = currentHash.match(/backend=([^&]+)/);
+  const hash = backendMatch ? `#room=${roomId}&backend=${backendMatch[1]}` : `#room=${roomId}`;
+  window.history.replaceState(null, '', hash);
 }
 
 /** Room from the URL if present, otherwise a fresh one (written back to the URL). */
@@ -50,5 +55,8 @@ export function initialRoom(): string {
 }
 
 export function buildInviteLink(roomId: string): string {
-  return `${window.location.origin}${window.location.pathname}#room=${roomId}`;
+  const base = getRuntimeApiBase();
+  const isRemote = base && !base.includes('localhost') && !base.includes('127.0.0.1');
+  const query = isRemote ? `#room=${roomId}&backend=${encodeURIComponent(base)}` : `#room=${roomId}`;
+  return `${window.location.origin}${window.location.pathname}${query}`;
 }

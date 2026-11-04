@@ -1,4 +1,5 @@
 import { getStoredToken } from './authService';
+import { getRuntimeApiBase } from '../config/runtimeConfig';
 
 export interface Workspace {
   id: string;
@@ -41,7 +42,7 @@ export interface TransferRecord {
   completedAt?: string;
 }
 
-const getApiBase = () => import.meta.env.VITE_API_BASE_URL || '';
+const getApiBase = () => getRuntimeApiBase();
 
 function authHeaders(): HeadersInit {
   const token = getStoredToken();

@@ -23,6 +23,7 @@ import { recordTransfer } from '../services/workspaceService';
 import { WebRtcEngine, PeerInfo, LinkState, SignalingStatus } from '../services/webrtcEngine';
 import { TransferManager, LocalTransfer } from '../services/transferManager';
 import { parseRoomInput, buildInviteLink } from '../services/room';
+import { getRuntimeApiBase, setRuntimeApiBase } from '../config/runtimeConfig';
 import { InviteQrModal } from './InviteQrModal';
 
 export type { LocalTransfer } from '../services/transferManager';
@@ -93,6 +94,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [uiError, setUiError] = useState<string | null>(null);
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [customServerUrl, setCustomServerUrl] = useState(getRuntimeApiBase());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const managerRef = useRef<TransferManager | null>(null);
@@ -289,10 +292,63 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       </div>
 
       {!connected && (
-        <div style={{ background: 'rgba(255, 46, 0, 0.12)', border: '1px solid var(--bauhaus-red)', color: '#fff', borderRadius: '6px', padding: '0.6rem 0.9rem', fontSize: '0.8rem', marginBottom: '1rem' }}>
-          Signaling server {signalingStatus === 'CONNECTING' ? 'connecting…' : 'unreachable'}
-          {engine?.lastError ? ` - ${engine.lastError}` : ''}. Peers can't find each other until it connects
-          (retrying automatically). Deployed on Vercel? Set <code>VITE_API_BASE_URL</code> (or <code>VITE_SIGNALING_URL</code>) to your backend.
+        <div style={{ background: 'rgba(255, 46, 0, 0.12)', border: '1px solid var(--bauhaus-red)', color: '#fff', borderRadius: '6px', padding: '0.75rem 1rem', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <strong>Signaling Server {signalingStatus === 'CONNECTING' ? 'Connecting…' : 'Unreachable'}</strong>
+              <div style={{ fontSize: '0.75rem', opacity: 0.9, marginTop: '0.2rem' }}>
+                {engine?.lastError ? engine.lastError : 'Cannot reach WebSocket signaling server.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomServerUrl(getRuntimeApiBase());
+                setShowServerConfig((s) => !s);
+              }}
+              className="btn-ghost"
+              style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '4px' }}
+            >
+              {showServerConfig ? 'Hide Config' : 'Configure Backend URL'}
+            </button>
+          </div>
+
+          {showServerConfig && (
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255, 46, 0, 0.25)' }}>
+              <div style={{ fontSize: '0.75rem', marginBottom: '0.4rem', color: '#cbd5e1' }}>
+                Live Backend / Cloudflare Tunnel URL:
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={customServerUrl}
+                  onChange={(e) => setCustomServerUrl(e.target.value)}
+                  placeholder="https://your-tunnel.trycloudflare.com"
+                  style={{
+                    flex: '1 1 240px',
+                    background: 'rgba(0,0,0,0.5)',
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    borderRadius: '4px',
+                    padding: '0.45rem 0.65rem',
+                    color: '#fff',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.8rem',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRuntimeApiBase(customServerUrl);
+                    engine?.reconnectWithUrl();
+                  }}
+                  className="btn-primary"
+                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem', whiteSpace: 'nowrap' }}
+                >
+                  Connect Now
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {!secureCrypto && (

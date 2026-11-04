@@ -9,3 +9,4 @@ router.get('/history', optionalAuthMiddleware, getTransfers);
 router.get('/activity', optionalAuthMiddleware, getActivityLogs);
 
 export default router;
+

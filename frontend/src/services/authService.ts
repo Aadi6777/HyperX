@@ -1,3 +1,5 @@
+import { getRuntimeApiBase } from '../config/runtimeConfig';
+
 export interface User {
   id: string;
   email: string;
@@ -39,7 +41,7 @@ export function clearSession(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-const getApiBase = () => import.meta.env.VITE_API_BASE_URL || '';
+const getApiBase = () => getRuntimeApiBase();
 
 export async function loginUser(email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${getApiBase()}/api/v1/auth/login`, {
