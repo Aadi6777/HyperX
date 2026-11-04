@@ -110,26 +110,14 @@ export async function login(req, res) {
     }
 
     // In-Memory Fallback
-    let memUser = inMemoryStore.users.get(normEmail);
+    const memUser = inMemoryStore.users.get(normEmail);
     if (!memUser) {
-      // Auto-create demo user for smooth testing experience
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-      const cleanName = email.split('@')[0].replace(/[._-]/g, ' ');
-      memUser = {
-        id: 'usr_' + uuidv4().substring(0, 8),
-        email: normEmail,
-        password: hashedPassword,
-        fullName: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-        role: 'MEMBER',
-        createdAt: new Date().toISOString()
-      };
-      inMemoryStore.users.set(normEmail, memUser);
-    } else {
-      const isMatch = await bcrypt.compare(password, memUser.password);
-      if (!isMatch) {
-        return res.status(401).json({ message: 'Invalid email or password' });
-      }
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, memUser.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const token = signToken(memUser);

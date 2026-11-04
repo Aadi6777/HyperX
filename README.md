@@ -1,56 +1,35 @@
-# HyperX
+# Nexora
 
-> High-Speed Zero-RAM P2P Streaming & Real-Time CRDT Swarm Collaboration Platform
+> High-Speed Zero-RAM P2P Streaming & Real-Time Collaboration Platform
 
 ---
 
-### The Problem HyperX Solves
+### The Problem Nexora Solves
 
-Most web file-sharing solutions choke and crash when you drop a large file. The browser buffers the entire payload into JavaScript heap RAM, causing the tab to freeze, stutter, or outright crash with `Out of Memory` errors.
+Traditional web file-sharing platforms buffer large payloads directly into browser JavaScript heap memory, causing tabs to freeze, stutter, and crash with `Out of Memory` (OOM) errors when handling files over a few gigabytes. Furthermore, uploading multi-gigabyte files to centralized cloud servers consumes heavy bandwidth, incurs egress costs, and introduces latency and privacy risks.
 
-Centralized cloud storage also requires uploading massive multi-gigabyte files to intermediary servers first, paying high egress costs, waiting twice for uploads and downloads, and creating privacy concerns.
-
-**HyperX takes a radically different approach:**
-- Files stream **directly between browsers peer-to-peer** via native WebRTC DataChannels.
-- The browser reads files slice-by-slice as sequential byte streams (`ReadableStream` & `WritableStream`), immediately feeding chunks into local `IndexedDB` storage with active backpressure control.
-- Even if you stream **50GB+** files, browser RAM consumption stays completely flat and negligible.
-- Peers in a room can collaborate simultaneously on a live **Conflict-Free Replicated Data Type (CRDT) scratchpad**, share code, exchange notes, and transfer files across the swarm.
+**Nexora takes an architectural approach built for scale:**
+- **Direct P2P Streaming**: Files stream directly browser-to-browser over native WebRTC DataChannels with STUN/TURN ICE negotiation.
+- **Zero-RAM Slicing**: Files are read slice-by-slice as sequential 64KB byte streams with dynamic backpressure (`bufferedAmountLow`), immediately writing into local `IndexedDB` storage with constant $O(1)$ flatline memory consumption.
+- **End-to-End Encryption**: Every transfer is encrypted client-side using Web Crypto API (`AES-256-GCM`) with SHA-256 checksum verification.
+- **Real-Time Collaboration**: Peer rooms feature synchronized live notes, shared clipboard syncing, and instant QR-code room invites.
+- **Resilient Persistence**: Powered by MongoDB with an automatic embedded in-memory fallback engine so the platform boots instantly under any environment.
 
 ---
 
 ### Architecture & Tech Stack
 
-HyperX is built on a modern high-performance full-stack architecture:
-
-- **MongoDB & Mongoose**:
-  - `User`: BCrypt password hashing, JWT stateless authentication, usage metrics.
-  - `Room` / `Workspace`: Dynamic room code routing (e.g. `#room=K7M2QX9P`), membership roles, and isolation.
-  - `Transfer`: Granular transfer audit trail (filename, size, chunks, checksum, duration, speed, sender, receiver).
-  - `CrdtDoc`: Real-time collaborative scratchpad persistence with version tracking.
-  - *Zero-Failure Resilience*: Auto-detects local/Atlas MongoDB; automatically falls back to an embedded high-speed in-memory store if the daemon is offline so the app always boots cleanly.
-- **Express.js**:
+- **Backend (Node.js & Express)**:
   - High-throughput REST API (`/api/v1/health`, `/api/v1/auth`, `/api/v1/rooms`, `/api/v1/transfers`, `/api/v1/crdt`).
-  - CORS, JSON streaming parsers, and security middleware.
-- **React 18 & TypeScript (Vite)**:
-  - Cyber-glassmorphism Bauhaus UI.
-  - WebRTC DataChannels, Web Streams API, IndexedDB chunk cache, and Web Crypto API (AES-256-GCM).
-- **Node.js & WebSockets (`ws`)**:
-  - High-performance unified HTTP + WebSocket server running on port `8080`.
-  - Room mesh presence, SDP offer/answer/ICE candidate routing, and **Automatic Signaling Relay Fallback** if direct UDP/STUN is blocked.
-
----
-
-### How HyperX Differs from HyperLink (Competitive Analysis)
-
-| Feature | HyperLink (Friend's Reference) | **HyperX (Our Project)** |
-| :--- | :--- | :--- |
-| **Tech Stack** | Next.js 15 + Supabase (PostgreSQL) + PeerJS | **Node.js, Express, MongoDB & React Native Engine** |
-| **WebRTC Core** | Third-party PeerJS library wrapper | **Pure Native `RTCPeerConnection` with Perfect Negotiation** |
-| **Symmetric NAT Handling** | None (Fails/aborts if direct P2P fails) | **Automatic WebSocket Signaling Relay Fallback (Zero Aborts)** |
-| **Collaboration** | Single 1-to-1 file drop only | **Multi-Peer Swarm + Real-time Collaborative CRDT Scratchpad** |
-| **Chunking & Flow Control** | Standard file slices | **64KB Adaptive Dynamic Backpressure (`bufferedAmountLow`)** |
-| **Resumability** | Basic state | **Bitmask Ranges (`have` / `want`) Recovery Protocol** |
-| **Database Lock-in** | Supabase Cloud dependent | **Self-contained MongoDB + Automatic In-Memory Fallback** |
+  - Native WebSocket Signaling (`ws`): Peer discovery, SDP offer/answer exchange, and ICE candidate negotiation with strict room isolation.
+  - JWT Authentication: Cryptographically signed stateless access tokens with BCrypt password hashing.
+  - MongoDB & Mongoose: User accounts, persistent room records, transfer audit logs, and document states.
+  - Embedded In-Memory Engine: Resilient automatic fallback if MongoDB is not connected.
+- **Frontend (React 18 & TypeScript / Vite)**:
+  - Responsive Bauhaus UI with real-time transfer telemetry and HUD dashboards.
+  - Pure native `RTCPeerConnection` and `RTCDataChannel` streaming engine.
+  - Client-side AES-256-GCM encryption with browser Web Crypto API.
+  - Chunked `IndexedDB` storage cache with range-based resume protocol.
 
 ---
 
@@ -59,14 +38,14 @@ HyperX is built on a modern high-performance full-stack architecture:
 ```
    [ Sender Browser ]                               [ Receiver Browser ]
     ┌────────────────────────────────────────────────────────┐
-    │ File Slicing (Streams API - 64KB chunks)               │
+    │ 64KB Stream Slicing & Backpressure Control             │
     │ Client-Side AES-256-GCM Web Crypto                     │
     │ Persistent IndexedDB Chunk Storage                     │
-    │ Live CRDT Scratchpad Editor                            │
+    │ Real-Time Collaborative Notes & Clipboard              │
     └──────────┬─────────────────────────────────┬───────────┘
                │                                 │
                │  Direct WebRTC DataChannel      │
-               │  (Primary Bulk Encrypted P2P)   │
+               │  (Encrypted P2P Binary Stream)  │
                └────────────────────────────────►│
                                                  │
                                                  ▼
@@ -76,16 +55,16 @@ HyperX is built on a modern high-performance full-stack architecture:
                         ▲                 ▲
                         │                 │
                 SDP/ICE │                 │ SDP/ICE
-                + Relay │                 │ + Relay
+             Signaling  │                 │ Signaling
                         ▼                 ▼
               ┌─────────────────────────────────────┐
               │    Node.js / Express Signaling      │
-              │   (WebSocket / JWT / Rooms / CRDT)  │
+              │  (WebSocket / JWT / Room Isolation) │
               └──────────────────┬──────────────────┘
                                  │
                                  ▼
-                           MongoDB 7.0
-                    (Mongoose Schema Models)
+                           MongoDB / Atlas
+                    (Resilient In-Memory Fallback)
 ```
 
 ---
@@ -107,24 +86,37 @@ cd HyperX
 npm run dev
 ```
 
-Both servers will start simultaneously:
+Both services start simultaneously:
 - **Frontend App**: `http://localhost:5173`
-- **Backend API**: `http://localhost:8080/api/v1/health`
-- **Signaling Mesh**: `ws://localhost:8080/ws/signaling`
+- **Backend Health API**: `http://localhost:8080/api/v1/health`
+- **WebSocket Signaling**: `ws://localhost:8080/ws/signaling`
 
-#### 3. Run Backend Automated Test Suite
+#### 3. Run Automated Test Suite
 ```bash
 npm test
 ```
+Runs 7 comprehensive backend integration tests covering health diagnostics, registration, authentication security, room creation, document persistence, and WebSocket signaling.
 
 ---
 
-### Docker Compose (Full Stack)
+### Deployment on Render (Unified Full-Stack)
+
+1. Connect your repository to Render as a **Web Service**.
+2. Settings:
+   - **Root Directory**: Leave blank / empty
+   - **Runtime**: `Node`
+   - **Build Command**: `npm run build`
+   - **Start Command**: `npm start`
+3. The Express backend serves both the React application bundle and the WebSocket signaling engine 24/7 on a single domain with zero configuration.
+
+---
+
+### Docker Compose
 
 ```bash
 docker compose up --build
 ```
 Spins up:
-1. `hyperx-mongo`: MongoDB 7 container
-2. `hyperx-backend`: Node.js Express & WebSocket server
-3. `hyperx-frontend`: React 18 production build served via Nginx
+1. `nexora-mongo`: MongoDB 7 container
+2. `nexora-backend`: Node.js Express & WebSocket signaling server
+3. `nexora-frontend`: React production build served via Nginx

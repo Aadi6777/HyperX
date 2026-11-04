@@ -1,4 +1,4 @@
-# Multi-stage production build for HyperX React Frontend
+# Multi-stage production build for Nexora React Frontend
 FROM node:20-alpine AS builder
 
 WORKDIR /app

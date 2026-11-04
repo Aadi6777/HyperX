@@ -4,7 +4,7 @@ set -e
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==========================================================="
-echo "⚡ Starting HyperX Full-Stack System"
+echo "⚡ Starting Nexora Full-Stack System"
 echo "   MongoDB • Express.js • React 18 • Node.js"
 echo "==========================================================="
 
@@ -22,7 +22,7 @@ fi
 
 cleanup() {
   echo ""
-  echo "Shutting down HyperX services..."
+  echo "Shutting down Nexora services..."
   kill $(jobs -p) 2>/dev/null || true
   exit 0
 }
@@ -43,7 +43,7 @@ npm run dev &
 
 echo ""
 echo "==========================================================="
-echo "✅ HyperX System is LIVE!"
+echo "✅ Nexora System is LIVE!"
 echo "   - Frontend Web App:     http://localhost:5173"
 echo "   - Backend Health API:   http://localhost:8080/api/v1/health"
 echo "   - REST Endpoints:       http://localhost:8080/api/v1/(auth|rooms|crdt)"

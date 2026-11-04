@@ -1,15 +1,15 @@
 /**
- * HyperX Runtime Configuration
+ * Nexora Runtime Configuration
  *
  * Resolves API Base URL and WebSocket Signaling URL dynamically:
  * 1. Query/hash parameter override (?backend=https://... or #...&backend=https://...)
- * 2. localStorage override ('hyperx_api_base_url')
+ * 2. localStorage override ('nexora_api_base_url')
  * 3. Vite build-time environment variable (VITE_API_BASE_URL / VITE_SIGNALING_URL)
  * 4. Localhost/LAN fallback
  */
 
-const STORAGE_KEY_API = 'hyperx_api_base_url';
-const STORAGE_KEY_SIGNALING = 'hyperx_signaling_url';
+const STORAGE_KEY_API = 'nexora_api_base_url';
+const STORAGE_KEY_SIGNALING = 'nexora_signaling_url';
 
 export function getRuntimeApiBase(): string {
   if (typeof window === 'undefined') {

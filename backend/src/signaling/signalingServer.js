@@ -42,7 +42,7 @@ export class SignalingServer {
       });
     });
 
-    // Heartbeat check every 30s
+    // Heartbeat check every 30s (unref'd to allow graceful process termination)
     this.heartbeatInterval = setInterval(() => {
       this.wss.clients.forEach((ws) => {
         if (!ws.isAlive) {
@@ -55,8 +55,19 @@ export class SignalingServer {
         } catch {}
       });
     }, 30000);
+    this.heartbeatInterval.unref();
 
     console.log('[Signaling] ⚡ WebSocket Signaling Engine running on /ws/signaling');
+  }
+
+  close() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    for (const ws of this.wss.clients) {
+      try { ws.terminate(); } catch {}
+    }
+    this.wss.close();
   }
 
   handleMessage(ws, msg) {
@@ -159,35 +170,27 @@ export class SignalingServer {
 
   handleForward(ws, msg) {
     const meta = this.socketMeta.get(ws);
+    if (!meta) {
+      this.send(ws, { type: 'error', message: 'Unauthorized: Join a room before sending messages' });
+      return;
+    }
+
     const targetPeerId = msg.targetPeerId;
     if (!targetPeerId) return;
 
-    if (meta) {
-      if (!msg.senderPeerId) msg.senderPeerId = meta.peerId;
-      if (!msg.senderName) msg.senderName = meta.peerName;
-    }
+    // Strict identity spoof prevention: sender cannot forge identity
+    msg.senderPeerId = meta.peerId;
+    msg.senderName = meta.peerName;
+    msg.workspaceId = meta.roomId;
+    msg.roomId = meta.roomId;
 
-    const roomId = msg.workspaceId || msg.roomId || meta?.roomId;
-    let targetSocket = null;
+    // Strict room isolation: target MUST be in the same room
+    const room = this.rooms.get(meta.roomId);
+    if (!room) return;
 
-    if (roomId && this.rooms.has(roomId)) {
-      targetSocket = this.rooms.get(roomId).get(targetPeerId)?.ws;
-    }
-
-    // Global room scan fallback
-    if (!targetSocket) {
-      for (const room of this.rooms.values()) {
-        if (room.has(targetPeerId)) {
-          targetSocket = room.get(targetPeerId).ws;
-          break;
-        }
-      }
-    }
-
-    if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-      this.send(targetSocket, msg);
-    } else {
-      // Receiver may be offline or initializing
+    const target = room.get(targetPeerId);
+    if (target && target.ws.readyState === WebSocket.OPEN) {
+      this.send(target.ws, msg);
     }
   }
 
@@ -196,8 +199,11 @@ export class SignalingServer {
     const transferId = (msg.transferId || '').toUpperCase().trim();
     if (!transferId || !meta) return;
 
-    this.transferRegistry.set(transferId, meta.peerId);
-    console.log(`[Signaling] Registered transfer: ${transferId} -> sender: ${meta.peerId}`);
+    this.transferRegistry.set(transferId, {
+      senderPeerId: meta.peerId,
+      roomId: meta.roomId
+    });
+    console.log(`[Signaling] Registered transfer: ${transferId} -> sender: ${meta.peerId} in room: ${meta.roomId}`);
 
     this.send(ws, {
       type: 'transfer-registered',
@@ -205,7 +211,7 @@ export class SignalingServer {
       status: 'REGISTERED'
     });
 
-    const roomId = meta.roomId || msg.workspaceId;
+    const roomId = meta.roomId;
     if (roomId) {
       msg.senderPeerId = meta.peerId;
       msg.senderName = meta.peerName;
@@ -215,10 +221,13 @@ export class SignalingServer {
 
   handleTransferRequest(ws, msg) {
     const meta = this.socketMeta.get(ws);
+    if (!meta) return;
+
     const transferId = (msg.transferId || '').toUpperCase().trim();
     if (!transferId) return;
 
-    const targetSenderPeerId = this.transferRegistry.get(transferId) || msg.targetPeerId;
+    const reg = this.transferRegistry.get(transferId);
+    const targetSenderPeerId = typeof reg === 'object' ? reg.senderPeerId : reg;
     if (!targetSenderPeerId) {
       this.send(ws, {
         type: 'error',
@@ -227,6 +236,11 @@ export class SignalingServer {
       });
       return;
     }
+
+    // Enforce verified requester identity
+    msg.senderPeerId = meta.peerId;
+    msg.senderName = meta.peerName;
+    msg.targetPeerId = targetSenderPeerId;
 
     if (meta) {
       msg.senderPeerId = meta.peerId;
@@ -239,30 +253,29 @@ export class SignalingServer {
 
   handleCrdtUpdate(ws, msg) {
     const meta = this.socketMeta.get(ws);
-    const roomId = msg.workspaceId || msg.roomId || meta?.roomId;
-    if (!roomId) return;
+    if (!meta) return;
 
-    if (meta) {
-      msg.senderPeerId = meta.peerId;
-      msg.senderName = meta.peerName;
-    }
+    msg.senderPeerId = meta.peerId;
+    msg.senderName = meta.peerName;
+    msg.workspaceId = meta.roomId;
+    msg.roomId = meta.roomId;
     msg.timestamp = Date.now();
 
     // Broadcast live CRDT delta to all peers in the room except sender
-    this.broadcastToRoom(roomId, meta?.peerId, msg);
+    this.broadcastToRoom(meta.roomId, meta.peerId, msg);
   }
 
   handleBroadcast(ws, msg) {
     const meta = this.socketMeta.get(ws);
-    const roomId = msg.workspaceId || msg.roomId || meta?.roomId;
-    if (!roomId) return;
+    if (!meta) return;
 
-    if (meta) {
-      msg.senderPeerId = meta.peerId;
-      msg.senderName = meta.peerName;
-    }
+    msg.senderPeerId = meta.peerId;
+    msg.senderName = meta.peerName;
+    msg.workspaceId = meta.roomId;
+    msg.roomId = meta.roomId;
     msg.timestamp = Date.now();
-    this.broadcastToRoom(roomId, null, msg);
+
+    this.broadcastToRoom(meta.roomId, null, msg);
   }
 
   handleDisconnect(ws) {

@@ -1,4 +1,4 @@
-# Lightweight production Dockerfile for HyperX Backend (Node.js / Express / Mongoose)
+# Lightweight production Dockerfile for Nexora Backend (Node.js / Express / Mongoose)
 FROM node:20-alpine
 
 WORKDIR /app

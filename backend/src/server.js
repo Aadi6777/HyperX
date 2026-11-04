@@ -31,8 +31,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
 }));
 
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -70,7 +70,7 @@ if (fs.existsSync(frontendDist)) {
   // Informational endpoint when running backend standalone without frontend build
   app.get('/', (req, res) => {
     res.json({
-      service: 'HyperX Full-Stack Platform',
+      service: 'Nexora Platform',
       version: '2.0.0',
       signaling: '/ws/signaling',
       health: '/api/v1/health',
@@ -99,21 +99,24 @@ const signalingServer = new SignalingServer(server);
 async function startServer() {
   await connectDB();
 
-  server.listen(PORT, HOST, () => {
-    console.log('===========================================================');
-    console.log(`🚀 HyperX Backend Server running on http://${HOST}:${PORT}`);
-    console.log(`   - REST Health:       http://localhost:${PORT}/api/v1/health`);
-    console.log(`   - REST Auth:         http://localhost:${PORT}/api/v1/auth`);
-    console.log(`   - REST Rooms:        http://localhost:${PORT}/api/v1/rooms`);
-    console.log(`   - REST CRDT:         http://localhost:${PORT}/api/v1/crdt`);
-    console.log(`   - WebSocket Mesh:    ws://localhost:${PORT}/ws/signaling`);
-    console.log('===========================================================');
+  return new Promise((resolve) => {
+    server.listen(PORT, HOST, () => {
+      console.log('===========================================================');
+      console.log(`🚀 Nexora Backend Server running on http://${HOST}:${PORT}`);
+      console.log(`   - REST Health:       http://localhost:${PORT}/api/v1/health`);
+      console.log(`   - REST Auth:         http://localhost:${PORT}/api/v1/auth`);
+      console.log(`   - REST Rooms:        http://localhost:${PORT}/api/v1/rooms`);
+      console.log(`   - REST CRDT:         http://localhost:${PORT}/api/v1/crdt`);
+      console.log(`   - WebSocket Mesh:    ws://localhost:${PORT}/ws/signaling`);
+      console.log('===========================================================');
+      resolve();
+    });
   });
 }
 
-startServer().catch((err) => {
+const serverReady = startServer().catch((err) => {
   console.error('[Fatal] Server failed to start:', err);
   process.exit(1);
 });
 
-export { app, server, signalingServer };
+export { app, server, signalingServer, serverReady };

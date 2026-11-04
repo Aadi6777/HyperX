@@ -1,7 +1,7 @@
 {
-  "name": "hyperx-backend",
+  "name": "nexora-backend",
   "version": "1.0.0",
-  "description": "HyperX Backend - High-Speed Zero-RAM P2P Streaming & CRDT Collaboration Platform",
+  "description": "Nexora Backend - High-Speed Zero-RAM P2P Streaming & CRDT Collaboration Platform",
   "main": "src/server.js",
   "type": "module",
   "scripts": {

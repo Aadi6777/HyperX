@@ -308,9 +308,9 @@ export const App: React.FC = () => {
             <span className="badge-tag">Production Verified &bull; Node.js + Express + MongoDB</span>
           </div>
 
-          <h3 className="card-title">HyperX Infrastructure Runtime</h3>
+          <h3 className="card-title">Nexora Infrastructure Runtime</h3>
           <p className="card-desc">
-            Direct WebRTC DataChannels handle bulk binary streams between peer browsers with zero RAM spikes and automatic WebSocket relay fallback. The Node.js + Express signaling server coordinates STUN/TURN ICE negotiation and persists rooms, transfer audit records, and collaborative CRDT document states into MongoDB.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers with zero RAM spikes and automatic STUN/TURN traversal. The Node.js + Express signaling server coordinates ICE negotiation and persists rooms, transfer audit records, and collaborative CRDT document states into MongoDB.
           </p>
 
           <pre style={{

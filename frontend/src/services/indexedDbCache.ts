@@ -4,7 +4,7 @@
  * Prevents browser tab RAM exhaustion when receiving multi-gigabyte files.
  */
 
-const DB_NAME = 'HyperX_ChunkStorage';
+const DB_NAME = 'Nexora_ChunkStorage';
 const DB_VERSION = 3;
 const STORE_CHUNKS = 'file_chunks';
 const STORE_META = 'transfer_metadata';

@@ -5,7 +5,7 @@ export function getHealth(req, res) {
 
   return res.json({
     status: 'UP',
-    service: 'HyperX Backend',
+    service: 'Nexora Backend',
     version: '2.0.0',
     database: dbStatus,
     activeDatabaseType,

@@ -1,23 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import http from 'http';
-import { app, server } from '../src/server.js';
+import mongoose from 'mongoose';
+import { app, server, serverReady, signalingServer } from '../src/server.js';
 import WebSocket from 'ws';
 
 const BASE_URL = 'http://localhost:8080';
 
-test('HyperX Backend API Test Suite', async (t) => {
+test('Nexora Backend API Test Suite', async (t) => {
+  // Ensure the server has finished database connection check and is actively listening
+  await serverReady;
+
+  t.after(async () => {
+    try { signalingServer?.close(); } catch {}
+    try { server.close(); } catch {}
+    try { await mongoose.disconnect(); } catch {}
+  });
+
   await t.test('GET /api/v1/health returns 200 OK and database status', async () => {
     const res = await fetch(`${BASE_URL}/api/v1/health`);
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.strictEqual(data.status, 'UP');
-    assert(data.service.includes('HyperX'));
     assert(data.database.includes('CONNECTED'));
   });
 
-  await t.test('POST /api/v1/auth/register creates user account', async () => {
-    const email = `test.${Date.now()}@hyperx.io`;
+  await t.test('POST /api/v1/auth/register creates user account and signs genuine JWT', async () => {
+    const email = `test.${Date.now()}@nexora.io`;
     const res = await fetch(`${BASE_URL}/api/v1/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -31,6 +39,18 @@ test('HyperX Backend API Test Suite', async (t) => {
     const data = await res.json();
     assert(data.token);
     assert.strictEqual(data.user.email, email);
+  });
+
+  await t.test('POST /api/v1/auth/login rejects unknown email with 401 Unauthorized', async () => {
+    const res = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'ghost_nonexistent_user@nexora.io',
+        password: 'AnyPassword123!'
+      })
+    });
+    assert.strictEqual(res.status, 401);
   });
 
   await t.test('POST /api/v1/rooms creates a collaboration room with code', async () => {

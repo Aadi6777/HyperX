@@ -6,32 +6,32 @@ services:
   # ===========================================================================
   mongo:
     image: mongo:7-jammy
-    container_name: hyperx-mongo
+    container_name: nexora-mongo
     restart: unless-stopped
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: hyperx
+      MONGO_INITDB_DATABASE: nexora
     volumes:
       - mongo_data:/data/db
     networks:
-      - hyperx-network
+      - nexora-network
 
   # ===========================================================================
-  # HyperX Backend (Node.js 20 / Express / Mongoose / WebSockets)
+  # Nexora Backend (Node.js 20 / Express / Mongoose / WebSockets)
   # ===========================================================================
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: hyperx-backend
+    container_name: nexora-backend
     restart: unless-stopped
     depends_on:
       - mongo
     environment:
-      MONGODB_URI: mongodb://mongo:27017/hyperx
+      MONGODB_URI: mongodb://mongo:27017/nexora
       SERVER_PORT: ${SERVER_PORT:-8080}
-      JWT_SECRET: ${JWT_SECRET:-hyperx-secret-key-32-chars-minimum-2026}
+      JWT_SECRET: ${JWT_SECRET:-nexora-secure-jwt-secret-key-32-chars-minimum-2026}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
@@ -41,16 +41,16 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - hyperx-network
+      - nexora-network
 
   # ===========================================================================
-  # HyperX Frontend (React + Vite + TypeScript + Nginx)
+  # Nexora Frontend (React + Vite + TypeScript + Nginx)
   # ===========================================================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: hyperx-frontend
+    container_name: nexora-frontend
     restart: unless-stopped
     depends_on:
       backend:
@@ -58,14 +58,14 @@ services:
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     environment:
-      - VITE_API_URL=http://localhost:8080
+      - VITE_API_BASE_URL=http://localhost:8080
     networks:
-      - hyperx-network
+      - nexora-network
 
 volumes:
   mongo_data:
     driver: local
 
 networks:
-  hyperx-network:
+  nexora-network:
     driver: bridge

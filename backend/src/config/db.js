@@ -7,16 +7,16 @@ export let activeDatabaseType = 'DISCONNECTED';
 export const inMemoryStore = {
   users: new Map(),
   rooms: new Map([
-    ['hyperx-global-mesh', {
-      id: 'hyperx-global-mesh',
+    ['nexora-global-mesh', {
+      id: 'nexora-global-mesh',
       code: 'GLOBAL',
-      name: 'HyperX Global Mesh',
+      name: 'Nexora Global Mesh',
       slug: 'global-mesh',
       ownerId: 'system_root',
-      ownerName: 'HyperX Core',
+      ownerName: 'Nexora Core',
       members: [
-        { id: 'm1', userId: 'user_alice', email: 'alice@hyperx.io', fullName: 'Alice Engineer', role: 'OWNER', joinedAt: new Date().toISOString() },
-        { id: 'm2', userId: 'user_bob', email: 'bob@hyperx.io', fullName: 'Bob Architect', role: 'MEMBER', joinedAt: new Date().toISOString() }
+        { id: 'm1', userId: 'user_alice', email: 'alice@nexora.io', fullName: 'Alice Engineer', role: 'OWNER', joinedAt: new Date().toISOString() },
+        { id: 'm2', userId: 'user_bob', email: 'bob@nexora.io', fullName: 'Bob Architect', role: 'MEMBER', joinedAt: new Date().toISOString() }
       ],
       createdAt: new Date().toISOString()
     }]
@@ -24,10 +24,10 @@ export const inMemoryStore = {
   transfers: [],
   activityLogs: [],
   crdtDocs: new Map([
-    ['hyperx-global-mesh', {
-      roomId: 'hyperx-global-mesh',
+    ['nexora-global-mesh', {
+      roomId: 'nexora-global-mesh',
       title: 'Global Swarm Scratchpad',
-      content: '# Welcome to HyperX Swarm Collaboration\n\n- Zero-RAM P2P streaming active\n- Real-time CRDT scratchpad synced\n- E2E AES-256-GCM encryption verified\n',
+      content: '# Welcome to Nexora Swarm Collaboration\n\n- Zero-RAM P2P streaming active\n- Real-time CRDT scratchpad synced\n- E2E AES-256-GCM encryption verified\n',
       version: 1,
       lastModifiedBy: 'System',
       updatedAt: new Date().toISOString()

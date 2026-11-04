@@ -1,7 +1,7 @@
 {
-  "name": "hyperx",
+  "name": "nexora",
   "private": true,
-  "description": "HyperX - Enterprise Zero-RAM P2P Streaming & CRDT Collaboration Platform",
+  "description": "Nexora - Enterprise Zero-RAM P2P Streaming & CRDT Collaboration Platform",
   "scripts": {
     "dev": "./start.sh",
     "postinstall": "npm --prefix frontend install && npm --prefix backend install",
