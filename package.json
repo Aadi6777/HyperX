@@ -6,7 +6,7 @@
     "dev": "./start.sh",
     "postinstall": "npm --prefix frontend install && npm --prefix backend install",
     "build:frontend": "npm --prefix frontend run build",
-    "build": "npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install",
+    "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
     "start": "node backend/src/server.js",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
