@@ -2,6 +2,9 @@ import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { connectDB } from './config/db.js';
 import { SignalingServer } from './signaling/signalingServer.js';
 
@@ -13,11 +16,15 @@ import crdtRoutes from './routes/crdtRoutes.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+
 const app = express();
 const PORT = process.env.SERVER_PORT || process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Global CORS Middleware - allows local development and production Vercel frontends
+// Global CORS Middleware - allows cross-origin requests when running separate dev servers
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -43,15 +50,39 @@ app.use('/api/v1/workspaces', roomRoutes); // Alias for seamless backward compat
 app.use('/api/v1/transfers', transferRoutes);
 app.use('/api/v1/crdt', crdtRoutes);
 
-// Root informational endpoint
-app.get('/', (req, res) => {
-  res.json({
-    service: 'HyperX Backend',
-    version: '2.0.0',
-    signaling: '/ws/signaling',
-    health: '/api/v1/health',
-    status: 'ONLINE'
+// Static assets & SPA fallback for production deployment
+if (fs.existsSync(frontendDist)) {
+  console.log(`[Static] Serving frontend static assets from: ${frontendDist}`);
+  app.use(express.static(frontendDist));
+
+  // SPA fallback for non-API client routes
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+      return next();
+    }
+    const indexPath = path.join(frontendDist, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    next();
   });
+} else {
+  // Informational endpoint when running backend standalone without frontend build
+  app.get('/', (req, res) => {
+    res.json({
+      service: 'HyperX Full-Stack Platform',
+      version: '2.0.0',
+      signaling: '/ws/signaling',
+      health: '/api/v1/health',
+      status: 'ONLINE',
+      note: 'Frontend dist not found. Run "npm run build" to build frontend.'
+    });
+  });
+}
+
+// 404 handler for unmatched API routes
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ message: `API route ${req.method} ${req.path} not found` });
 });
 
 // Global Error Handler

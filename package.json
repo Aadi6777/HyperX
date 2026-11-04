@@ -4,10 +4,12 @@
   "description": "HyperX - Enterprise Zero-RAM P2P Streaming & CRDT Collaboration Platform",
   "scripts": {
     "dev": "./start.sh",
-    "start": "./start.sh",
+    "postinstall": "npm --prefix frontend install && npm --prefix backend install",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install",
+    "start": "node backend/src/server.js",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build",
     "test": "cd backend && npm test"
   }
 }

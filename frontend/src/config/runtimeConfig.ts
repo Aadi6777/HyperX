@@ -41,7 +41,18 @@ export function getRuntimeApiBase(): string {
     // Ignore URL parse issues
   }
 
-  // 2. LocalStorage override
+  const host = window.location.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host);
+  const isVercel = host.includes('vercel.app');
+
+  // Unified full-stack deployment (e.g. on Render, Fly, or Docker):
+  // When frontend is served directly by the backend, prioritize same-origin relative path.
+  // This guarantees zero-configuration, zero CORS issues, and no stale tunnel overrides.
+  if (!isLocal && !isVercel) {
+    return '';
+  }
+
+  // 2. LocalStorage override (for Vercel or separate frontend/backend deployments)
   try {
     const stored = localStorage.getItem(STORAGE_KEY_API);
     if (stored && stored.trim()) {
@@ -56,8 +67,7 @@ export function getRuntimeApiBase(): string {
   if (envBase) return envBase;
 
   // 4. Localhost or Local IP fallback
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host)) {
+  if (isLocal) {
     return `http://${host}:8080`;
   }
 
@@ -90,6 +100,17 @@ export function getRuntimeSignalingUrl(): string {
     }
   } catch {
     // Ignore URL parse issues
+  }
+
+  const host = window.location.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host);
+  const isVercel = host.includes('vercel.app');
+
+  // Unified full-stack deployment on Render:
+  // Automatically points to the secure WebSocket server on the exact same host & port
+  if (!isLocal && !isVercel) {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${window.location.host}/ws/signaling`;
   }
 
   // 2. LocalStorage override

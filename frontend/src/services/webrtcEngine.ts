@@ -111,8 +111,8 @@ export function buildIceServers(): RTCIceServer[] {
 /**
  * Where the signaling WebSocket lives. Priority:
  *   1. VITE_SIGNALING_URL                       (explicit ws:// or wss:// URL)
- *   2. VITE_API_BASE_URL (http->ws, https->wss)  (your deployed Spring Boot backend)
- *   3. same origin /ws/signaling                 (Vite dev proxy or the nginx container)
+ *   2. VITE_API_BASE_URL (http->ws, https->wss)  (deployed backend)
+ *   3. same origin /ws/signaling                 (unified deployment or dev proxy)
  * Note: Vercel cannot host or proxy WebSockets, so a Vercel build MUST set #1 or #2.
  */
 export function resolveSignalingUrl(): string {

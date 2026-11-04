@@ -323,14 +323,14 @@ export const App: React.FC = () => {
             color: '#527b5fff',
             fontFamily: 'var(--font-mono)'
           }}>
-{`# 1. Start Spring Boot Backend Connected to Supabase
-./run-supabase.sh
+{`# 1. Unified Full-Stack Render Deployment
+Connect GitHub repo to Render as a Web Service:
+Build Command: npm run build
+Start Command: npm start
 
-# 2. Expose Port 8080 with Secure Cloudflare Tunnel
-cloudflared tunnel --url http://localhost:8080
-
-# 3. Connect Live Vercel Frontend
-Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
+# 2. Zero-Configuration Single URL
+Frontend UI, REST API (/api/v1/*), and WebSocket (/ws/signaling)
+run together 24/7 on a single permanent domain with zero CORS setup.`}
           </pre>
         </section>
       </main>
