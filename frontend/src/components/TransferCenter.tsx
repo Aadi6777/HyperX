@@ -168,8 +168,8 @@ export const TransferCenter: React.FC<TransferCenterProps> = ({
       const mbSlice = new Uint8Array(1024 * 1024);
       for (let i = 0; i < mbSlice.length; i++) mbSlice[i] = (i * 7) % 256;
       const mbCount = Math.max(1, Math.round(sizeBytes / (1024 * 1024)));
-      const parts: Uint8Array[] = new Array(mbCount);
-      for (let i = 0; i < mbCount; i++) parts[i] = mbSlice;
+      const parts: BlobPart[] = new Array(mbCount);
+      for (let i = 0; i < mbCount; i++) parts[i] = mbSlice.buffer;
       const blob = new Blob(parts, { type: 'application/octet-stream' });
       const syntheticFile = new File([blob], name, { type: 'application/octet-stream', lastModified: Date.now() });
       handleFiles([syntheticFile]);
