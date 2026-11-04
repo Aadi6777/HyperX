@@ -2,32 +2,23 @@ version: '3.8'
 
 services:
   # ===========================================================================
-  # PostgreSQL 16 Database
+  # MongoDB 7 Database
   # ===========================================================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: hyperx-postgres
+  mongo:
+    image: mongo:7-jammy
+    container_name: hyperx-mongo
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-hyperx_db}
-      POSTGRES_USER: ${DB_USER:-hyperx_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hyperx_secure_pass_2026}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: hyperx
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/migrations/V1__init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hyperx_user} -d ${DB_NAME:-hyperx_db}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - mongo_data:/data/db
     networks:
       - hyperx-network
 
   # ===========================================================================
-  # HyperX Backend (Spring Boot 3.3 / Java 21)
+  # HyperX Backend (Node.js 20 / Express / Mongoose / WebSockets)
   # ===========================================================================
   backend:
     build:
@@ -36,27 +27,24 @@ services:
     container_name: hyperx-backend
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      - mongo
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-hyperx_db}
-      SPRING_DATASOURCE_USERNAME: ${DB_USER:-hyperx_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-hyperx_secure_pass_2026}
+      MONGODB_URI: mongodb://mongo:27017/hyperx
       SERVER_PORT: ${SERVER_PORT:-8080}
-      SPRING_FLYWAY_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET:-hyperx-mern-secret-key-32-chars-minimum-2026}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/api/v1/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 10s
     networks:
       - hyperx-network
 
   # ===========================================================================
-  # HyperX Frontend (React + Vite + TypeScript + Tailwind)
+  # HyperX Frontend (React + Vite + TypeScript + Nginx)
   # ===========================================================================
   frontend:
     build:
@@ -75,7 +63,7 @@ services:
       - hyperx-network
 
 volumes:
-  postgres_data:
+  mongo_data:
     driver: local
 
 networks:

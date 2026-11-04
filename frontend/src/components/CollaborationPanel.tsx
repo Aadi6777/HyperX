@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
   Send,
   History,
   Activity,
   CheckCircle,
-  Users
+  Users,
+  FileCode,
+  Save,
+  Check
 } from 'lucide-react';
 import {
   Workspace,
@@ -14,10 +17,13 @@ import {
   fetchWorkspaceActivities,
   fetchWorkspaceTransfers
 } from '../services/workspaceService';
-import { ChatMessage, PeerInfo } from '../services/webrtcEngine';
+import { ChatMessage, PeerInfo, WebRtcEngine } from '../services/webrtcEngine';
+import { fetchCrdtDoc, saveCrdtDoc } from '../services/crdtService';
 
 interface CollaborationPanelProps {
   workspace: Workspace | null;
+  roomId?: string;
+  engine?: WebRtcEngine | null;
   currentUserEmail?: string;
   peers: PeerInfo[];
   chatMessages: ChatMessage[];
@@ -26,14 +32,74 @@ interface CollaborationPanelProps {
 
 export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
   workspace,
+  roomId = 'hyperx-global-mesh',
+  engine,
   peers,
   chatMessages,
   onSendChatMessage,
 }) => {
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'AUDIT' | 'TRANSFERS'>('CHAT');
+  const [activeTab, setActiveTab] = useState<'CRDT_PAD' | 'CHAT' | 'AUDIT' | 'TRANSFERS'>('CRDT_PAD');
   const [chatInput, setChatInput] = useState('');
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
+
+  // CRDT Scratchpad State
+  const effectiveRoomId = workspace?.id || roomId;
+  const [crdtContent, setCrdtContent] = useState<string>('');
+  const [crdtTitle, setCrdtTitle] = useState<string>('Room Swarm Scratchpad');
+  const [crdtLastModifier, setCrdtLastModifier] = useState<string>('System');
+  const [isSaved, setIsSaved] = useState<boolean>(true);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load CRDT doc from backend
+  useEffect(() => {
+    fetchCrdtDoc(effectiveRoomId).then((doc) => {
+      if (doc) {
+        setCrdtContent(doc.content);
+        setCrdtTitle(doc.title);
+        setCrdtLastModifier(doc.lastModifiedBy);
+      }
+    });
+  }, [effectiveRoomId]);
+
+  // Listen for real-time CRDT updates from mesh peers
+  useEffect(() => {
+    if (!engine) return;
+
+    engine.setCallbacks({
+      onCrdtUpdate: (update) => {
+        if (update.roomId === effectiveRoomId || update.roomId.toUpperCase() === effectiveRoomId.toUpperCase()) {
+          setCrdtContent(update.content);
+          if (update.title) setCrdtTitle(update.title);
+          setCrdtLastModifier(update.senderName);
+        }
+      }
+    });
+  }, [engine, effectiveRoomId]);
+
+  // Handle Scratchpad typing with real-time broadcast and debounced persistence
+  const handleContentChange = (newVal: string) => {
+    setCrdtContent(newVal);
+    setIsSaved(false);
+
+    // 1. Instant broadcast over WebSocket mesh to all peers in the room
+    if (engine) {
+      engine.sendCrdtUpdate(newVal, crdtTitle);
+    }
+
+    // 2. Debounced save to MongoDB / MERN backend
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveCrdtDoc(effectiveRoomId, {
+        content: newVal,
+        title: crdtTitle,
+        modifiedBy: engine?.peerName || 'Peer',
+        peerId: engine?.peerId
+      }).then(() => {
+        setIsSaved(true);
+      });
+    }, 800);
+  };
 
   useEffect(() => {
     if (!workspace) return;
@@ -71,6 +137,22 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
             type="button"
+            className={`btn-ghost ${activeTab === 'CRDT_PAD' ? 'active-tab' : ''}`}
+            style={{
+              padding: '0.4rem 0.8rem',
+              fontSize: '0.8rem',
+              color: activeTab === 'CRDT_PAD' ? 'var(--cyan-glow)' : 'var(--text-muted)',
+              borderBottom: activeTab === 'CRDT_PAD' ? '2px solid var(--cyan-glow)' : 'none',
+              borderRadius: 0,
+            }}
+            onClick={() => setActiveTab('CRDT_PAD')}
+          >
+            <FileCode size={14} />
+            <span>CRDT Scratchpad</span>
+          </button>
+
+          <button
+            type="button"
             className={`btn-ghost ${activeTab === 'CHAT' ? 'active-tab' : ''}`}
             style={{
               padding: '0.4rem 0.8rem',
@@ -82,7 +164,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
             onClick={() => setActiveTab('CHAT')}
           >
             <MessageSquare size={14} />
-            <span>Workspace Chat</span>
+            <span>Room Chat</span>
           </button>
 
           <button
@@ -114,7 +196,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
             onClick={() => setActiveTab('TRANSFERS')}
           >
             <History size={14} />
-            <span>Transfer History</span>
+            <span>Transfer Logs</span>
           </button>
         </div>
 
@@ -125,7 +207,43 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
         </div>
       </div>
 
-      {/* Tab: Real-Time Chat (Phase 9) */}
+      {/* Tab: Real-Time CRDT Scratchpad (Unique Innovation) */}
+      {activeTab === 'CRDT_PAD' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Live CRDT Scratchpad &bull; Last edited by: <strong style={{ color: '#fff' }}>{crdtLastModifier}</strong>
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: isSaved ? '#10b981' : 'var(--bauhaus-yellow)' }}>
+              {isSaved ? <Check size={12} /> : <Save size={12} />}
+              {isSaved ? 'Synced to MongoDB' : 'Syncing...'}
+            </span>
+          </div>
+
+          <textarea
+            value={crdtContent}
+            onChange={(e) => handleContentChange(e.target.value)}
+            placeholder="Collaborative CRDT Scratchpad: Paste notes, code, file descriptions, or transfer links here. All peers in the room see updates in real time..."
+            style={{
+              width: '100%',
+              height: '240px',
+              background: 'rgba(0, 0, 0, 0.4)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '8px',
+              padding: '0.85rem',
+              color: '#f8fafc',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.84rem',
+              lineHeight: '1.5',
+              resize: 'vertical',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+      )}
+
+      {/* Tab: Real-Time Chat */}
       {activeTab === 'CHAT' && (
         <div>
           <div
@@ -141,7 +259,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
           >
             {chatMessages.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4rem' }}>
-                No messages yet. Send a real-time message to workspace peers!
+                No messages yet. Send a real-time message to room peers!
               </div>
             ) : (
               chatMessages.map((msg) => (
@@ -173,7 +291,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
           <form onSubmit={handleSend} style={{ display: 'flex', gap: '0.5rem' }}>
             <input
               type="text"
-              placeholder="Type message to workspace peers..."
+              placeholder="Type message to room peers..."
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               className="cyber-input"
@@ -186,12 +304,12 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
         </div>
       )}
 
-      {/* Tab: Activity Audit Trail (Phase 3) */}
+      {/* Tab: Activity Audit Trail */}
       {activeTab === 'AUDIT' && (
         <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
           {activities.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem' }}>
-              No audit logs recorded for this workspace boundary yet.
+              No audit logs recorded for this workspace yet.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -247,7 +365,7 @@ export const CollaborationPanel: React.FC<CollaborationPanelProps> = ({
                   <div>
                     <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 500 }}>{tr.fileName}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {formatBytes(tr.fileSize)} &bull; Sender: {tr.senderFullName}
+                      {formatBytes(tr.fileSize)} &bull; Sender: {tr.senderFullName || (tr as any).senderName || 'Peer'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>

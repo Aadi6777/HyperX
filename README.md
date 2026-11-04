@@ -1,87 +1,96 @@
-# Nexora
+# HyperX
 
-> Process of Nexora
+> High-Speed Zero-RAM P2P Streaming & Real-Time CRDT Swarm Collaboration Platform
 
 ---
 
-### The Problem Nexora Solves
+### The Problem HyperX Solves
 
-Most web apps choke and crash when you drag and drop a large file. The browser tries to buffer the entire file into JavaScript memory (RAM), causing the tab to freeze, stutter, or outright crash with `Out of Memory` errors.
+Most web file-sharing solutions choke and crash when you drop a large file. The browser buffers the entire payload into JavaScript heap RAM, causing the tab to freeze, stutter, or outright crash with `Out of Memory` errors.
 
-On top of that, traditional cloud storage services require uploading massive multi-gigabyte files to centralized servers first, paying high bandwidth costs, waiting twice for uploads and downloads, and creating privacy concerns.
+Centralized cloud storage also requires uploading massive multi-gigabyte files to intermediary servers first, paying high egress costs, waiting twice for uploads and downloads, and creating privacy concerns.
 
-**Nexora** takes a different approach:
-- Files stream **directly between browsers peer-to-peer** via WebRTC DataChannels.
+**HyperX takes a radically different approach:**
+- Files stream **directly between browsers peer-to-peer** via native WebRTC DataChannels.
 - The browser reads files slice-by-slice as sequential byte streams (`ReadableStream` & `WritableStream`), immediately feeding chunks into local `IndexedDB` storage with active backpressure control.
-- Even if you stream **50GB+** files, browser RAM consumption stays flat and negligible.
+- Even if you stream **50GB+** files, browser RAM consumption stays completely flat and negligible.
+- Peers in a room can collaborate simultaneously on a live **Conflict-Free Replicated Data Type (CRDT) scratchpad**, share code, exchange notes, and transfer files across the swarm.
 
 ---
 
-### The Engineering Process of Nexora
+### Architecture & Tech Stack
 
-We build Nexora step-by-step across 10 disciplined phases to ensure every layer is resilient, battle-tested, and interview-ready:
+HyperX is built on a modern high-performance full-stack architecture:
+
+- **MongoDB & Mongoose**:
+  - `User`: BCrypt password hashing, JWT stateless authentication, usage metrics.
+  - `Room` / `Workspace`: Dynamic room code routing (e.g. `#room=K7M2QX9P`), membership roles, and isolation.
+  - `Transfer`: Granular transfer audit trail (filename, size, chunks, checksum, duration, speed, sender, receiver).
+  - `CrdtDoc`: Real-time collaborative scratchpad persistence with version tracking.
+  - *Zero-Failure Resilience*: Auto-detects local/Atlas MongoDB; automatically falls back to an embedded high-speed in-memory store if the daemon is offline so the app always boots cleanly.
+- **Express.js**:
+  - High-throughput REST API (`/api/v1/health`, `/api/v1/auth`, `/api/v1/rooms`, `/api/v1/transfers`, `/api/v1/crdt`).
+  - CORS, JSON streaming parsers, and security middleware.
+- **React 18 & TypeScript (Vite)**:
+  - Cyber-glassmorphism Bauhaus UI.
+  - WebRTC DataChannels, Web Streams API, IndexedDB chunk cache, and Web Crypto API (AES-256-GCM).
+- **Node.js & WebSockets (`ws`)**:
+  - High-performance unified HTTP + WebSocket server running on port `8080`.
+  - Room mesh presence, SDP offer/answer/ICE candidate routing, and **Automatic Signaling Relay Fallback** if direct UDP/STUN is blocked.
+
+---
+
+### How HyperX Differs from HyperLink (Competitive Analysis)
+
+| Feature | HyperLink (Friend's Reference) | **HyperX (Our Project)** |
+| :--- | :--- | :--- |
+| **Tech Stack** | Next.js 15 + Supabase (PostgreSQL) + PeerJS | **Pure MERN Stack (MongoDB, Express, React, Node.js)** |
+| **WebRTC Core** | Third-party PeerJS library wrapper | **Pure Native `RTCPeerConnection` with Perfect Negotiation** |
+| **Symmetric NAT Handling** | None (Fails/aborts if direct P2P fails) | **Automatic WebSocket Signaling Relay Fallback (Zero Aborts)** |
+| **Collaboration** | Single 1-to-1 file drop only | **Multi-Peer Swarm + Real-time Collaborative CRDT Scratchpad** |
+| **Chunking & Flow Control** | Standard file slices | **64KB Adaptive Dynamic Backpressure (`bufferedAmountLow`)** |
+| **Resumability** | Basic state | **Bitmask Ranges (`have` / `want`) Recovery Protocol** |
+| **Database Lock-in** | Supabase Cloud dependent | **Self-contained MongoDB + Automatic In-Memory Fallback** |
+
+---
+
+### System Architecture Diagram
 
 ```
-[Phase 1]  🟢 Foundation & Setup        (Spring Boot 3.3, React 18 + TS, PostgreSQL, Flyway V1)
-[Phase 2]  🟢 Auth & Identity           (JWT, BCrypt, Stateless Security, RBAC)
-[Phase 3]  🟢 Workspace Boundaries      (Multi-tenant isolation, roles, activity audit logs)
-[Phase 4]  🟢 WebRTC Signaling Engine   (STUN/TURN, SDP offer/answer exchange via WebSockets)
-[Phase 5]  🟢 Zero-RAM Chunk Engine     (Adaptive backpressure, 256KB–2MB dynamic chunking)
-[Phase 6]  🟢 Local Chunk Cache         (Persistent IndexedDB assembly & file reconstruction)
-[Phase 7]  🟢 Resumable Transfers       (Bitmask recovery, network reconnection handling)
-[Phase 8]  🟢 End-to-End Encryption     (Client-side AES-256-GCM + SHA-256 verification)
-[Phase 9]  🟢 Peer Collaboration        (Real-time chat, notifications, file annotations)
-[Phase 10] 🟢 Production Deployment    (Vercel frontend, Dockerized backend, CI/CD)
+   [ Sender Browser ]                               [ Receiver Browser ]
+    ┌────────────────────────────────────────────────────────┐
+    │ File Slicing (Streams API - 64KB chunks)               │
+    │ Client-Side AES-256-GCM Web Crypto                     │
+    │ Persistent IndexedDB Chunk Storage                     │
+    │ Live CRDT Scratchpad Editor                            │
+    └──────────┬─────────────────────────────────┬───────────┘
+               │                                 │
+               │  Direct WebRTC DataChannel      │
+               │  (Primary Bulk Encrypted P2P)   │
+               └────────────────────────────────►│
+                                                 │
+                                                 ▼
+                                          Stream Assembly
+                                          SHA-256 Checksum
+                                          IndexedDB File Save
+                        ▲                 ▲
+                        │                 │
+                SDP/ICE │                 │ SDP/ICE
+                + Relay │                 │ + Relay
+                        ▼                 ▼
+              ┌─────────────────────────────────────┐
+              │    Node.js / Express Signaling      │
+              │   (WebSocket / JWT / Rooms / CRDT)  │
+              └──────────────────┬──────────────────┘
+                                 │
+                                 ▼
+                           MongoDB 7.0
+                    (Mongoose Schema Models)
 ```
 
 ---
 
-### System Architecture at a Glance
-
-```
-  [ Sender Browser ]                               [ Receiver Browser ]
-   ┌────────────────────────────────────────────────────────┐
-   │ File Chunking (Streams API)                            │
-   │ AES-256-GCM Web Crypto                                 │
-   │ IndexedDB Local Cache                                  │
-   └──────────┬─────────────────────────────────┬───────────┘
-              │                                 │
-              │  Direct WebRTC DataChannel      │
-              │  (Bulk Encrypted P2P Chunks)    │
-              └────────────────────────────────►│
-                                                │
-                                                ▼
-                                         Stream Assembly
-                                         SHA-256 Checksum
-                                         IndexedDB File Save
-                      ▲                 ▲
-                      │                 │
-              SDP/ICE │                 │ SDP/ICE
-             Exchange │                 │ Exchange
-                      ▼                 ▼
-             ┌───────────────────────────────────┐
-             │    Spring Boot Signaling Server   │
-             │   (WebSocket / JWT / Workspaces)  │
-             └─────────────────┬─────────────────┘
-                               │
-                               ▼
-                       PostgreSQL 16
-                   (Flyway Schema State)
-```
-
----
-
-### Tech Stack
-
-- **Frontend**: React 18, TypeScript, Vite, Vanilla CSS (cyber/glassmorphic theme).
-- **Client Storage & Streaming**: WebRTC DataChannels, Streams API, IndexedDB, Web Crypto API.
-- **Backend**: Java 21, Spring Boot 3.3, Spring Security, Spring WebSocket.
-- **Database & Migrations**: PostgreSQL 16 managed strictly through versioned Flyway scripts (`V1__init.sql`).
-- **Orchestration & Deploy**: Docker Compose, Vercel edge deployment ready.
-
----
-
-### Getting Started Locally
+### Quick Start
 
 #### 1. Clone the repository
 ```bash
@@ -89,102 +98,33 @@ git clone https://github.com/Aadi6777/HyperX.git
 cd HyperX
 ```
 
-#### 2. Start PostgreSQL via Docker
+#### 2. Run with One Command
 ```bash
-docker compose up -d postgres
+./start.sh
 ```
-
-#### 3. Run the Spring Boot Backend
+*Or using npm:*
 ```bash
-cd backend
-./mvnw spring-boot:run
-```
-*The backend runs on `http://localhost:8080`. Flyway automatically runs database migrations on startup.*
-
-#### 4. Run the React Frontend
-```bash
-cd ../frontend
-npm install
 npm run dev
 ```
-*Open `http://localhost:5173` to view the live dashboard and capability probes.*
+
+Both servers will start simultaneously:
+- **Frontend App**: `http://localhost:5173`
+- **Backend API**: `http://localhost:8080/api/v1/health`
+- **Signaling Mesh**: `ws://localhost:8080/ws/signaling`
+
+#### 3. Run Backend Automated Test Suite
+```bash
+npm test
+```
 
 ---
 
-### How to send a file (2 browsers)
+### Docker Compose (Full Stack)
 
-1. Open the app. The URL gets a room code, e.g. `http://localhost:5173/#room=K7M2QX9P`. No login needed.
-2. Click **Copy invite link** and open it in the other browser/device (or press **RECEIVE** and paste the code).
-3. Wait until both sides show a green dot next to the peer name and `1 P2P Channels`.
-4. Drop a file on the sender. The receiver sees an **incoming offer**: press **Accept & receive**, then **Save file**.
-5. The sender shows **DELIVERED** only after the receiver has confirmed the file.
-
-Both sides need the **same encryption passphrase** (or turn encryption off). A mismatch is reported as an error instead of producing a corrupt file.
-
-### Nexora extras (all peer-to-peer, nothing stored on a server)
-
-| Feature | What it does | Where the code is |
-|---|---|---|
-| **QR join** | The **QR code** button next to the room code shows the invite link as a QR. A phone camera scan opens Nexora already inside that room. (On `localhost` a phone can't connect - use your deployed URL.) | `components/InviteQrModal.tsx` |
-| **Shared clipboard** | Paste a link/snippet and push it to every device in the room; one-tap Copy, links get an Open button. Items live only in memory. | `services/roomSync.ts` (`ClipboardSync`) |
-| **Live notes (CRDT)** | A shared notepad everyone edits at once. Edits merge automatically with no server and no conflicts, even with simultaneous typing or a peer who reconnects later. | `services/crdtDoc.ts` (the CRDT), `services/roomSync.ts` (`NotesSync`) |
-
-**How the notes CRDT works (RGA):** every character is a node with a unique id `counter@peer` (a Lamport clock). An insert says "put me after node X"; a delete just marks a node as a tombstone. Concurrent inserts at the same spot are ordered by id, which every peer computes identically, so all replicas end up with the same text. Operations that arrive before the ones they depend on wait in a buffer. When a link opens, peers swap full state and merge it, so late joiners and reconnecting peers catch up automatically. If every peer closes the page, the notes are gone - download them first.
-
-### Troubleshooting
-
-| Symptom | Cause / fix |
-|---|---|
-| Red "Signaling server unreachable" banner | Backend isn't running, or (on Vercel) `VITE_API_BASE_URL` / `VITE_SIGNALING_URL` isn't set. |
-| Peers visible but dot stays yellow | Direct connection failed: the two networks need a TURN relay. Configure `VITE_TURN_*` (see `.env.example`). |
-| Encryption toggle disabled | The page isn't HTTPS/localhost (e.g. `http://192.168.x.x`), so the browser hides WebCrypto. Use HTTPS or a tunnel. |
-| Different users don't see each other | They must be in the same room: share the invite link rather than relying on each account's default workspace. |
-
----
-
-### Deploying the Frontend to Vercel
-
-Nexora is pre-configured with root and nested `vercel.json` configurations:
-
-1. Import the repository `https://github.com/Aadi6777/HyperX` in your **Vercel Dashboard**.
-2. Select `frontend` as the root directory (or keep the default root, which automatically runs `cd frontend && npm install && npm run build`).
-3. Set `VITE_API_BASE_URL` to your backend signaling server URL.
-4. Click **Deploy**.
-
----
-
-### Current Status: All 10 Phases Complete 🚀
-
-- [x] **Phase 1: Project Setup & Baseline**
-  - Database schema & Flyway migrations for `users`, `workspaces`, `members`
-  - Health diagnostic API (`/api/v1/health`)
-  - Stateless security & CORS configuration
-  - React + Vite dashboard with live hardware and browser capability probes
-- [x] **Phase 2: Authentication & Identity Management**
-  - BCrypt password hashing, stateless JWT issuance and verification
-  - User registration, login, and `/api/v1/auth/me` endpoints
-- [x] **Phase 3: Workspace Boundaries & Multi-tenancy**
-  - Workspace creation with slug isolation, member roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`)
-  - Real-time audit trail and file transfer logging (`activity_logs`, `transfer_records`)
-- [x] **Phase 4: WebRTC Signaling Engine**
-  - Spring WebSocket signaling handler (`/ws/signaling`)
-  - STUN/TURN integration, SDP offer/answer exchanges, and ICE candidate negotiation
-- [x] **Phase 5: Zero-RAM Chunk Engine**
-  - Fixed 64KB chunks (must stay under the 256KB SCTP message limit) with pipelined reads
-  - Real backpressure via `bufferedAmount` & `bufferedamountlow`; explicit offer → accept → stream → ACK handshake
-- [x] **Phase 6: Local Chunk Cache**
-  - Client-side IndexedDB persistence (`HyperX_ChunkStorage`)
-  - Safe byte reconstruction and direct file assembly without browser RAM spikes
-- [x] **Phase 7: Resumable Transfers**
-  - Bitmask chunk tracker and recovery protocol
-  - Pause, resume, and partial transfer completion
-- [x] **Phase 8: End-to-End Encryption**
-  - Client-side AES-256-GCM encryption with PBKDF2 key derivation
-  - Real-time SHA-256 integrity verification
-- [x] **Phase 9: Peer Collaboration**
-  - Real-time workspace chat with live online peer presence
-  - Chunk heatmap visualizer and audit trail viewer
-- [x] **Phase 10: Production Deployment**
-  - Multi-stage Dockerfile for Spring Boot Backend & React Frontend (Nginx SPA)
-  - Full Docker Compose orchestration and Vercel edge deployment configuration
-
+```bash
+docker compose up --build
+```
+Spins up:
+1. `hyperx-mongo`: MongoDB 7 container
+2. `hyperx-backend`: Node.js Express & WebSocket server
+3. `hyperx-frontend`: React 18 production build served via Nginx

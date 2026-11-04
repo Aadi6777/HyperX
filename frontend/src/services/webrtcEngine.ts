@@ -42,6 +42,14 @@ export interface LinkListener {
 export type WebRtcEventCallback = {
   onPeersUpdated?: (peers: PeerInfo[]) => void;
   onChatMessage?: (msg: ChatMessage) => void;
+  onCrdtUpdate?: (update: {
+    roomId: string;
+    senderPeerId: string;
+    senderName: string;
+    content: string;
+    title?: string;
+    timestamp: number;
+  }) => void;
   onConnectionStatus?: (status: SignalingStatus) => void;
   /** Fires whenever any peer link changes state; map of peerId -> state (closed links are absent). */
   onLinksChanged?: (links: Record<string, LinkState>) => void;
@@ -174,7 +182,7 @@ export class WebRtcEngine {
     this.listeners.forEach((l) => l.onLinkOpen?.(peerId));
   }
   private fireLinkClosed(peerId: string) {
-    this.fireLinkClosed(peerId);
+    this.callbacks.onLinkClosed?.(peerId);
     this.listeners.forEach((l) => l.onLinkClosed?.(peerId));
   }
   private fireControl(peerId: string, msg: ControlMessage) {
@@ -368,6 +376,22 @@ export class WebRtcEngine {
     });
   }
 
+  public sendCrdtUpdate(content: string, title?: string) {
+    if (!this.currentWorkspaceId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.sendWs({
+      type: 'crdt-update',
+      workspaceId: this.currentWorkspaceId,
+      roomId: this.currentWorkspaceId,
+      senderPeerId: this.peerId,
+      senderName: this.peerName,
+      content,
+      title,
+      timestamp: Date.now(),
+    });
+  }
+
   /* ----------------------------------------------------- signaling handlers */
 
   private emitPeers() {
@@ -437,6 +461,17 @@ export class WebRtcEngine {
           senderPeerId: msg.senderPeerId as string,
           senderName: msg.senderName as string,
           text: msg.text as string,
+          timestamp: (msg.timestamp as number) || Date.now(),
+        });
+        break;
+      }
+      case 'crdt-update': {
+        this.callbacks.onCrdtUpdate?.({
+          roomId: (msg.workspaceId || msg.roomId) as string,
+          senderPeerId: msg.senderPeerId as string,
+          senderName: msg.senderName as string,
+          content: msg.content as string,
+          title: msg.title as string | undefined,
           timestamp: (msg.timestamp as number) || Date.now(),
         });
         break;

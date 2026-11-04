@@ -1,31 +1,16 @@
-# Multi-stage production build for HyperX Spring Boot Backend
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# Lightweight production Dockerfile for HyperX MERN Backend (Node.js / Express / Mongoose)
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy maven wrapper and pom.xml
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Copy source code and build production jar
 COPY src/ src/
-RUN ./mvnw clean package -DskipTests
-
-# Stage 2: Minimal runtime image
-FROM eclipse-temurin:21-jre-alpine
-
-WORKDIR /app
-
-# Install curl for docker healthcheck
-RUN apk add --no-cache curl
-
-# Non-root security user
-RUN addgroup -S hyperx && adduser -S hyperx -G hyperx
-USER hyperx
-
-COPY --from=builder /app/target/backend-1.0.0.jar app.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=5s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/v1/health || exit 1
+
+CMD ["node", "src/server.js"]

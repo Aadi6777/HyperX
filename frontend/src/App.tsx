@@ -288,6 +288,8 @@ export const App: React.FC = () => {
         {/* Real-time Collaboration & Audit Trail */}
         <CollaborationPanel
           workspace={activeWorkspace}
+          roomId={roomId}
+          engine={engine}
           currentUserEmail={currentUser?.email || 'operator@hyperx.io'}
           peers={peers}
           chatMessages={chatMessages}
@@ -303,12 +305,12 @@ export const App: React.FC = () => {
             <div className="icon-box cyan">
               <Terminal size={20} />
             </div>
-            <span className="badge-tag">Production Verified &bull; Supabase</span>
+            <span className="badge-tag">Production Verified &bull; Node.js + Express + MongoDB</span>
           </div>
 
-          <h3 className="card-title">Nexora Infrastructure Runtime</h3>
+          <h3 className="card-title">HyperX Infrastructure Runtime</h3>
           <p className="card-desc">
-            Direct WebRTC DataChannels handle bulk binary streams between peer browsers. The Spring Boot signaling server coordinates STUN/TURN ICE negotiation and persists audit state into your Supabase PostgreSQL cluster.
+            Direct WebRTC DataChannels handle bulk binary streams between peer browsers with zero RAM spikes and automatic WebSocket relay fallback. The Node.js + Express signaling server coordinates STUN/TURN ICE negotiation and persists rooms, transfer audit records, and collaborative CRDT document states into MongoDB.
           </p>
 
           <pre style={{
@@ -354,7 +356,7 @@ Set VITE_API_BASE_URL to your Tunnel URL -> Redeploy`}
                 E2E ENCRYPTED P2P TRANSFER
               </div>
               <div style={{ fontSize: '0.68rem', color: 'rgba(255, 255, 255, 0.25)', marginTop: '0.2rem' }}>
-                v1.01.000 &bull; Supabase PostgreSQL
+                v2.0.0 &bull; Node.js + MongoDB
               </div>
             </div>
           </div>
