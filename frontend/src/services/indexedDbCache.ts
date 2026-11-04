@@ -1,11 +1,11 @@
 /**
- * Nexora Phase 6: Local Chunk Cache
- * Persistent IndexedDB chunk assembly & file reconstruction engine.
+ * Local Chunk Cache
+ * Persistent IndexedDB chunk assembly & file reconstruction engine with in-memory fallback.
  * Prevents browser tab RAM exhaustion when receiving multi-gigabyte files.
  */
 
 const DB_NAME = 'HyperX_ChunkStorage';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const STORE_CHUNKS = 'file_chunks';
 const STORE_META = 'transfer_metadata';
 
@@ -23,11 +23,20 @@ export interface StoredTransferMeta {
 
 let dbInstance: IDBDatabase | null = null;
 
+// In-memory fallback in case IndexedDB fails, throws VersionError, or quota is exceeded
+const memoryChunks = new Map<string, ArrayBuffer>();
+const memoryMetas = new Map<string, StoredTransferMeta>();
+
 export async function getDb(): Promise<IDBDatabase> {
   if (dbInstance) return dbInstance;
 
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let request: IDBOpenDBRequest;
+    try {
+      request = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) {
+      return reject(e);
+    }
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -51,6 +60,24 @@ export async function getDb(): Promise<IDBDatabase> {
     };
 
     request.onerror = () => {
+      // If the existing database on disk has an even higher version, open without version number
+      if (request.error?.name === 'VersionError') {
+        try {
+          const fallbackReq = indexedDB.open(DB_NAME);
+          fallbackReq.onsuccess = () => {
+            dbInstance = fallbackReq.result;
+            dbInstance.onversionchange = () => {
+              dbInstance?.close();
+              dbInstance = null;
+            };
+            resolve(dbInstance);
+          };
+          fallbackReq.onerror = () => reject(fallbackReq.error);
+          return;
+        } catch (fbErr) {
+          return reject(fbErr);
+        }
+      }
       reject(request.error);
     };
   });
@@ -62,45 +89,61 @@ function fileRange(fileId: string): IDBKeyRange {
 }
 
 export async function saveTransferMetadata(meta: StoredTransferMeta): Promise<void> {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_META], 'readwrite');
-    tx.objectStore(STORE_META).put(meta);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
-  });
+  memoryMetas.set(meta.fileId, meta);
+  try {
+    const db = await getDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_META], 'readwrite');
+      tx.objectStore(STORE_META).put(meta);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
+    });
+  } catch (err) {
+    console.warn('[Cache] Saved transfer meta to in-memory fallback:', err);
+  }
 }
 
 /**
  * Persist one chunk. Resolves only once the transaction has COMMITTED (not merely when the
- * request was queued), so a "stored" chunk is really durable. Rejects on quota errors etc.
+ * request was queued), so a "stored" chunk is really durable. Reverts to in-memory store on failure.
  */
 export async function saveChunk(
   fileId: string,
   chunkIndex: number,
   data: ArrayBuffer
 ): Promise<void> {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_CHUNKS], 'readwrite');
-    tx.objectStore(STORE_CHUNKS).put({ fileId, chunkIndex, data, timestamp: Date.now() });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted (storage quota full?)'));
-  });
+  try {
+    const db = await getDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_CHUNKS], 'readwrite');
+      tx.objectStore(STORE_CHUNKS).put({ fileId, chunkIndex, data, timestamp: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted'));
+    });
+  } catch (err) {
+    console.warn('[Cache] Using in-memory fallback for chunk:', chunkIndex, err);
+    memoryChunks.set(`${fileId}_${chunkIndex}`, data);
+  }
 }
 
 export async function getChunk(fileId: string, chunkIndex: number): Promise<ArrayBuffer | null> {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_CHUNKS], 'readonly');
-    const req = tx.objectStore(STORE_CHUNKS).get([fileId, chunkIndex]);
-    req.onsuccess = () => {
-      resolve(req.result ? req.result.data : null);
-    };
-    req.onerror = () => reject(req.error);
-  });
+  try {
+    const db = await getDb();
+    const result = await new Promise<ArrayBuffer | null>((resolve, reject) => {
+      const tx = db.transaction([STORE_CHUNKS], 'readonly');
+      const req = tx.objectStore(STORE_CHUNKS).get([fileId, chunkIndex]);
+      req.onsuccess = () => {
+        resolve(req.result ? req.result.data : null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    if (result) return result;
+  } catch (err) {
+    console.warn('[Cache] Fallback to in-memory getChunk:', chunkIndex, err);
+  }
+  return memoryChunks.get(`${fileId}_${chunkIndex}`) ?? null;
 }
 
 /**
@@ -173,15 +216,24 @@ export async function saveToDiskStreaming(
 }
 
 export async function clearTransferCache(fileId: string): Promise<void> {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_CHUNKS, STORE_META], 'readwrite');
-    tx.objectStore(STORE_META).delete(fileId);
-    tx.objectStore(STORE_CHUNKS).delete(fileRange(fileId));
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  for (const k of [...memoryChunks.keys()]) {
+    if (k.startsWith(`${fileId}_`)) memoryChunks.delete(k);
+  }
+  memoryMetas.delete(fileId);
+
+  try {
+    const db = await getDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_CHUNKS, STORE_META], 'readwrite');
+      tx.objectStore(STORE_META).delete(fileId);
+      tx.objectStore(STORE_CHUNKS).delete(fileRange(fileId));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } catch {
+    // Ignore error
+  }
 }
 
 /**
@@ -190,14 +242,18 @@ export async function clearTransferCache(fileId: string): Promise<void> {
  * metadata record is older than maxAgeMs.
  */
 export async function purgeStaleTransfers(maxAgeMs = 24 * 60 * 60 * 1000): Promise<void> {
-  const db = await getDb();
-  const metas: StoredTransferMeta[] = await new Promise((resolve, reject) => {
-    const req = db.transaction([STORE_META], 'readonly').objectStore(STORE_META).getAll();
-    req.onsuccess = () => resolve(req.result as StoredTransferMeta[]);
-    req.onerror = () => reject(req.error);
-  });
-  const cutoff = Date.now() - maxAgeMs;
-  for (const m of metas) {
-    if (m.createdAt < cutoff) await clearTransferCache(m.fileId);
+  try {
+    const db = await getDb();
+    const metas: StoredTransferMeta[] = await new Promise((resolve, reject) => {
+      const req = db.transaction([STORE_META], 'readonly').objectStore(STORE_META).getAll();
+      req.onsuccess = () => resolve(req.result as StoredTransferMeta[]);
+      req.onerror = () => reject(req.error);
+    });
+    const cutoff = Date.now() - maxAgeMs;
+    for (const m of metas) {
+      if (m.createdAt < cutoff) await clearTransferCache(m.fileId);
+    }
+  } catch {
+    // Ignore error
   }
 }
